@@ -1,44 +1,55 @@
-# NFL Totals Lab V0.1
+# NFL Totals Lab V0.2 — Native Android
 
-Primer núcleo funcional para totales NFL (Over/Under).
+No HTML. No Netlify.
 
-## Motores incluidos
-- Markov Drive (30%)
-- Negative Binomial / Gamma-Poisson (25%)
-- Drive Monte Carlo (20%)
-- Bayesian shrinkage (15%)
-- Shadow Poisson (10%)
+Android nativo en Kotlin + Jetpack Compose con persistencia SQLite.
 
-## Funciones
-- Total de juego completo
-- Línea O/U editable
-- Hasta 500k simulaciones solicitadas, repartidas entre los 5 motores
-- P(Over), P(Under), proyección y percentiles
-- Clasificación:
-  - JUGABLE ★ >= 66%
-  - LEAN >= 60%
-  - PASS < 60%
-- Ranking persistente
-- Censo persistente
-- Data Vault JSON export/import
-- Diseño móvil para Android
+## Arquitectura NFL
+- Jornada nativa por tarjetas.
+- Ranking persistente.
+- Equipos: EPA/play, EPA defensivo, drives/G, TD/drive, Success Rate, explosive rate.
+- Censo persistente.
+- Apuestas.
+- Bank.
+- Brier LAB.
+- Auto-liquidación del Censo al sincronizar resultados finales.
+- SQLite Data Vault local.
 
-## Importante
-V0.1 valida motor + persistencia. Los parámetros del equipo son editables y comienzan en valores neutrales/de ejemplo.
-No interpretes un pick de V0.1 como apuesta basada en datos 2026 hasta conectar el feed NFL.
+## Fuentes
+La app consulta nflverse:
+- Schedule: `nflverse-data / schedules / games.csv`
+- Play-by-play: `play_by_play_<season>.csv.gz`
+- Rosters: `roster_<season>.csv`
+- Injuries: `injuries_<season>.csv`
 
-## Próxima versión
-V0.2:
-- ingestión automática nflverse / nflfastR
-- EPA/play ataque y defensa
-- success rate
-- drives/juego
-- points/drive
-- red-zone TD rate
-- explosive play rate
-- rolling windows + Bayesian prior
-- autoload de juegos
-- clima/injuries como capas posteriores
+## Motores
+- Markov Drive 30%
+- Negative Binomial 25%
+- Drive Monte Carlo 20%
+- Bayesian 15%
+- Shadow Poisson 10%
 
-## Instalación rápida Netlify
-Sube el contenido de esta carpeta como sitio estático. `index.html` debe quedar en la raíz publicada.
+100,000 simulaciones por motor.
+
+## Gating
+- JUGABLE ★ >= 66%
+- LEAN >= 60%
+- PASS < 60%
+
+## Primer arranque
+La app abre aunque no haya internet ni datos. Pulsa `SINCRONIZAR`.
+La primera sincronización de PBP puede tardar porque el archivo de play-by-play se descarga y procesa en streaming.
+
+## Compilación
+El repositorio incluye `.github/workflows/android-apk.yml`.
+Cada push a `main` compila automáticamente un APK debug y lo deja en:
+GitHub > Actions > Build Android APK > Artifacts.
+
+## Nota de diseño
+Esta versión es la base nativa. El siguiente paso es añadir:
+- depth chart / inactivos,
+- impacto por posición (QB/OL/WR/etc.),
+- clima live,
+- market-line movement,
+- Shadow Mode / Gating Mode avanzados,
+- backup/importación externa del Data Vault.
