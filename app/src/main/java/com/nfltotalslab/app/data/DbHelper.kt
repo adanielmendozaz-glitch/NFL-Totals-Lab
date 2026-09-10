@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 3) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE games(
@@ -76,6 +76,28 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         """.trimIndent())
 
         db.execSQL("""
+            CREATE TABLE shadow_predictions(
+                id INTEGER PRIMARY KEY,
+                game_id TEXT NOT NULL,
+                season INTEGER NOT NULL,
+                week INTEGER NOT NULL,
+                away_team TEXT NOT NULL,
+                home_team TEXT NOT NULL,
+                line REAL NOT NULL,
+                model_name TEXT NOT NULL,
+                pick TEXT NOT NULL,
+                probability REAL NOT NULL,
+                projection REAL NOT NULL,
+                input_key TEXT NOT NULL,
+                final_total INTEGER,
+                result TEXT,
+                created_at INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_game_model ON shadow_predictions(game_id,model_name,created_at)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_input ON shadow_predictions(game_id,model_name,input_key)")
+
+        db.execSQL("""
             CREATE TABLE bets(
                 id INTEGER PRIMARY KEY,
                 prediction_id INTEGER NOT NULL,
@@ -124,6 +146,29 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             db.execSQL("ALTER TABLE predictions ADD COLUMN input_key TEXT NOT NULL DEFAULT ''")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_predictions_game_created ON predictions(game_id, created_at)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_predictions_auto_input ON predictions(game_id, analysis_source, input_key)")
+        }
+        if (oldVersion < 4) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS shadow_predictions(
+                    id INTEGER PRIMARY KEY,
+                    game_id TEXT NOT NULL,
+                    season INTEGER NOT NULL,
+                    week INTEGER NOT NULL,
+                    away_team TEXT NOT NULL,
+                    home_team TEXT NOT NULL,
+                    line REAL NOT NULL,
+                    model_name TEXT NOT NULL,
+                    pick TEXT NOT NULL,
+                    probability REAL NOT NULL,
+                    projection REAL NOT NULL,
+                    input_key TEXT NOT NULL,
+                    final_total INTEGER,
+                    result TEXT,
+                    created_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_game_model ON shadow_predictions(game_id,model_name,created_at)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_input ON shadow_predictions(game_id,model_name,input_key)")
         }
     }
 
@@ -289,6 +334,103 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             "SELECT 1 FROM predictions WHERE game_id=? AND analysis_source='AUTO_CENSUS' AND input_key=? LIMIT 1",
             arrayOf(gameId,inputKey)
         ).use { it.moveToFirst() }
+
+    fun saveShadowPrediction(p: ShadowPrediction) {
+        val v=ContentValues().apply{
+            put("id",p.id);put("game_id",p.gameId);put("season",p.season);put("week",p.week)
+            put("away_team",p.awayTeam);put("home_team",p.homeTeam);put("line",p.line)
+            put("model_name",p.modelName);put("pick",p.pick);put("probability",p.probability)
+            put("projection",p.projection);put("input_key",p.inputKey);put("created_at",p.createdAt)
+            if(p.finalTotal==null)putNull("final_total")else put("final_total",p.finalTotal)
+            put("result",p.result)
+        }
+        writableDatabase.insertWithOnConflict("shadow_predictions",null,v,SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun hasShadowPrediction(gameId:String,modelName:String,inputKey:String):Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM shadow_predictions WHERE game_id=? AND model_name=? AND input_key=? LIMIT 1",
+            arrayOf(gameId,modelName,inputKey)
+        ).use{it.moveToFirst()}
+
+    fun loadShadowPredictions():List<ShadowPrediction>{
+        val out=mutableListOf<ShadowPrediction>()
+        readableDatabase.rawQuery("""
+            SELECT id,game_id,season,week,away_team,home_team,line,model_name,pick,probability,
+            projection,input_key,created_at,final_total,result
+            FROM shadow_predictions ORDER BY created_at DESC
+        """.trimIndent(),null).use{c->
+            while(c.moveToNext()){
+                out+=ShadowPrediction(
+                    id=c.getLong(0),
+                    gameId=c.getString(1),
+                    season=c.getInt(2),
+                    week=c.getInt(3),
+                    awayTeam=c.getString(4),
+                    homeTeam=c.getString(5),
+                    line=c.getDouble(6),
+                    modelName=c.getString(7),
+                    pick=c.getString(8),
+                    probability=c.getDouble(9),
+                    projection=c.getDouble(10),
+                    inputKey=c.getString(11),
+                    createdAt=c.getLong(12),
+                    finalTotal=if(c.isNull(13))null else c.getInt(13),
+                    result=if(c.isNull(14))null else c.getString(14)
+                )
+            }
+        }
+        return out
+    }
+
+    fun settleShadowPredictions(games:List<GameRecord>){
+        val finals=games.filter{it.finished}.associateBy{it.gameId}
+        val db=writableDatabase
+        readableDatabase.rawQuery(
+            "SELECT id,game_id,line,pick FROM shadow_predictions WHERE result IS NULL",
+            null
+        ).use{c->
+            while(c.moveToNext()){
+                val id=c.getLong(0)
+                val gameId=c.getString(1)
+                val line=c.getDouble(2)
+                val pick=c.getString(3)
+                val total=finals[gameId]?.finalTotal ?: continue
+                val result=when{
+                    total.toDouble()==line -> "PUSH"
+                    pick=="OVER" && total>line -> "WIN"
+                    pick=="UNDER" && total<line -> "WIN"
+                    else -> "LOSS"
+                }
+                val v=ContentValues().apply{put("final_total",total);put("result",result)}
+                db.update("shadow_predictions",v,"id=?",arrayOf(id.toString()))
+            }
+        }
+    }
+
+    fun applyLiveFinals(season:Int,week:Int,states:Collection<LiveGameState>):Int{
+        val finals=states.filter{it.isFinal}
+        if(finals.isEmpty())return 0
+        val db=writableDatabase
+        var updated=0
+        db.beginTransaction()
+        try{
+            finals.forEach{live->
+                val v=ContentValues().apply{
+                    put("away_score",live.awayScore)
+                    put("home_score",live.homeScore)
+                    put("synced_at",System.currentTimeMillis())
+                }
+                updated+=db.update(
+                    "games",v,
+                    "season=? AND week=? AND away_team=? AND home_team=?",
+                    arrayOf(season.toString(),week.toString(),live.awayTeam,live.homeTeam)
+                )
+            }
+            db.setTransactionSuccessful()
+        }finally{db.endTransaction()}
+        return updated
+    }
 
     fun saveBet(b: BetRecord) {
         val v=ContentValues().apply{

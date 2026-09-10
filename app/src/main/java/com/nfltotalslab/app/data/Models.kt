@@ -70,6 +70,24 @@ data class Prediction(
     val inputKey: String = ""
 )
 
+data class ShadowPrediction(
+    val id: Long,
+    val gameId: String,
+    val season: Int,
+    val week: Int,
+    val awayTeam: String,
+    val homeTeam: String,
+    val line: Double,
+    val modelName: String,
+    val pick: String,
+    val probability: Double,
+    val projection: Double,
+    val inputKey: String,
+    val createdAt: Long,
+    val finalTotal: Int? = null,
+    val result: String? = null
+)
+
 data class BetRecord(
     val id: Long = System.currentTimeMillis(),
     val predictionId: Long,

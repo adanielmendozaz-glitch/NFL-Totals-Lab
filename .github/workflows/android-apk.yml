@@ -42,5 +42,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V0.4.2-stable-signed
+          name: NFL-Totals-Lab-V0.5-Shadow-Calibrated
           path: app/build/outputs/apk/debug/app-debug.apk

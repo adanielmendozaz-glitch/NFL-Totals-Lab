@@ -1,5 +1,6 @@
 package com.nfltotalslab.app.data
 
+import com.nfltotalslab.app.model.ShadowLab
 import com.nfltotalslab.app.model.TotalsEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +17,7 @@ class NflRepository(
         val schedule=api.fetchSchedule(season)
         db.upsertGames(schedule)
         db.settlePredictions(schedule)
+        db.settleShadowPredictions(schedule)
         val settledBets=settlePendingBets(db)
         db.putKv("last_sync",System.currentTimeMillis().toString())
 
@@ -92,25 +94,40 @@ class NflRepository(
         }
 
         val week=activeWeek(schedule)
-        val auto=autoCensus(schedule,metrics,week)
+        val liveStates=if(week==null) emptyMap() else
+            runCatching{api.fetchLiveScores(season,week)}.getOrElse{emptyMap()}
+        val blocked=liveStates.values.filter{it.state!="pre"}.map{it.matchKey}.toSet()
+
+        val auto=autoCensus(schedule,metrics,week,blocked)
+        val shadow=ensureShadowCensus(schedule,metrics,week,blocked)
 
         SyncSummary(
             scheduleGames=schedule.size,
             pbpTeams=pbpTeams,
             rosterPlayers=rosterRows,
             injuryRows=injuryRows,
-            message="DEEP ✓ · $source · AUTO $auto${week?.let{" · Week $it"} ?: ""}",
+            message="DEEP ✓ · $source · AUTO $auto · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
             autoAnalyzed=auto,
             activeWeek=week
         )
     }
 
-    suspend fun liveScores(season:Int,week:Int):Map<String,LiveGameState> =
-        api.fetchLiveScores(season,week)
+    suspend fun liveScores(season:Int,week:Int):Map<String,LiveGameState> = withContext(Dispatchers.IO){
+        val states=api.fetchLiveScores(season,week)
+        val finalsApplied=db.applyLiveFinals(season,week,states.values)
+        if(finalsApplied>0){
+            val updated=db.loadGames(season)
+            db.settlePredictions(updated)
+            db.settleShadowPredictions(updated)
+            settlePendingBets(db)
+        }
+        states
+    }
 
     fun games(season:Int)=db.loadGames(season)
     fun metrics(season:Int)=db.loadMetrics(season)
     fun predictions()=db.loadPredictions()
+    fun shadows()=db.loadShadowPredictions()
     fun bets()=db.loadBets()
     fun bank()=db.loadBank()
 
@@ -140,12 +157,17 @@ class NflRepository(
     private suspend fun autoCensus(
         schedule:List<GameRecord>,
         metrics:List<TeamMetrics>,
-        week:Int?
+        week:Int?,
+        blocked:Set<String>
     ):Int = withContext(Dispatchers.Default){
         if(week==null)return@withContext 0
         val metricMap=metrics.associateBy{it.team}
         val candidates=schedule.filter{
-            it.gameType=="REG" && it.week==week && !it.finished && it.totalLine!=null
+            it.gameType=="REG" &&
+            it.week==week &&
+            !it.finished &&
+            it.totalLine!=null &&
+            "${it.awayTeam}@${it.homeTeam}" !in blocked
         }
 
         var count=0
@@ -161,6 +183,43 @@ class NflRepository(
                 )
                 db.savePrediction(p)
                 count++
+            }
+        }
+        count
+    }
+
+    private suspend fun ensureShadowCensus(
+        schedule:List<GameRecord>,
+        metrics:List<TeamMetrics>,
+        week:Int?,
+        blocked:Set<String>
+    ):Int = withContext(Dispatchers.Default){
+        if(week==null)return@withContext 0
+
+        val metricMap=metrics.associateBy{it.team}
+        val cores=db.loadPredictions()
+        val candidates=schedule.filter{
+            it.gameType=="REG" &&
+            it.week==week &&
+            !it.finished &&
+            it.totalLine!=null &&
+            "${it.awayTeam}@${it.homeTeam}" !in blocked
+        }
+
+        var count=0
+        candidates.forEach{game->
+            val key=inputKey(game,metricMap[game.awayTeam],metricMap[game.homeTeam])
+            val core=cores.firstOrNull{
+                it.gameId==game.gameId &&
+                it.analysisSource=="AUTO_CENSUS" &&
+                it.inputKey==key
+            } ?: return@forEach
+
+            ShadowLab.fromCore(core).forEach{x->
+                if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
+                    db.saveShadowPrediction(x)
+                    count++
+                }
             }
         }
         count

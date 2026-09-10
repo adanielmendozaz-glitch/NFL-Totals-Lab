@@ -92,3 +92,15 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - El repositorio público no contiene la clave privada.
 - V0.4.2 es la línea base de firma para futuras actualizaciones.
 - Fast Sync, Live Tracker, Auto Census, Core y Brier permanecen intactos.
+
+## V0.5 · Shadow Lab + Calibration
+
+- Shadow Lab persiste la salida individual de cada motor del Core.
+- Cada Shadow queda congelado pregame y nunca modifica el pick oficial.
+- Deep Sync evita crear Core/Shadow cuando LIVE ya marca IN/POST.
+- LIVE FINAL persiste el marcador y liquida Core + Shadow + Apuestas.
+- FAST SYNC también liquida Core + Shadow si LIVE estuvo apagado.
+- Brier usa un cierre oficial por juego.
+- Calibration añade rangos 50–54.9, 55–59.9, 60–64.9, 65–69.9 y 70%+.
+- Shadow Brier mide cada motor por separado.
+- SQLite DB3 -> DB4 es aditiva: conserva Censo, Core, Apuestas y Bank.

@@ -28,7 +28,7 @@ import java.util.*
 import kotlin.math.pow
 
 private enum class MainTab{JORNADA,RANKING,EQUIPOS,AJUSTES}
-private enum class SubTab{NONE,CENSO,CORE,APUESTAS,BANK,BRIER}
+private enum class SubTab{NONE,CENSO,CORE,SHADOW,APUESTAS,BANK,BRIER}
 
 @Composable
 fun NflTotalsApp(context:Context){
@@ -40,6 +40,7 @@ fun NflTotalsApp(context:Context){
     var games by remember{mutableStateOf(repo.games(season))}
     var metrics by remember{mutableStateOf(repo.metrics(season))}
     var preds by remember{mutableStateOf(repo.predictions())}
+    var shadows by remember{mutableStateOf(repo.shadows())}
     var bets by remember{mutableStateOf(repo.bets())}
     var bank by remember{mutableStateOf(repo.bank())}
     var syncing by remember{mutableStateOf(false)}
@@ -50,7 +51,7 @@ fun NflTotalsApp(context:Context){
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
 
     fun refresh(){
-        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();bets=repo.bets();bank=repo.bank()
+        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();bets=repo.bets();bank=repo.bank()
     }
 
     LaunchedEffect(liveEnabled,season,games){
@@ -80,7 +81,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.4.2 · STABLE SIGN + LIVE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.5 · SHADOW + CALIBRATION",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -111,9 +112,10 @@ fun NflTotalsApp(context:Context){
             when{
                 sub==SubTab.CENSO->CensusScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
+                sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
                 sub==SubTab.APUESTAS->BetsScreen(bets){sub=SubTab.NONE}
                 sub==SubTab.BANK->BankScreen(bank,onAdd={repo.addBank(it,"Ajuste manual");refresh()},onBack={sub=SubTab.NONE})
-                sub==SubTab.BRIER->BrierScreen(preds){sub=SubTab.NONE}
+                sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
                 main==MainTab.JORNADA->ScheduleScreen(
                     games=games,preds=preds,syncing=syncing,
                     liveScores=liveScores,liveEnabled=liveEnabled,liveLoading=liveLoading,
@@ -167,21 +169,31 @@ fun NflTotalsApp(context:Context){
 
 @Composable
 private fun SubBar(onClick:(SubTab)->Unit){
-    Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
-        listOf("▱" to SubTab.CENSO,"◉" to SubTab.CORE,"🎟" to SubTab.APUESTAS,"▣" to SubTab.BANK,"⚗" to SubTab.BRIER).forEach{(ic,t)->
-            val name=when(t){
-                SubTab.CENSO->"Censo"
-                SubTab.CORE->"Core"
-                SubTab.APUESTAS->"Apuestas"
-                SubTab.BANK->"Bank"
-                else->"Brier"
-            }
-            Surface(
-                modifier=Modifier.weight(1f).clickable{onClick(t)},
-                color=Card,shape=RoundedCornerShape(12.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)
-            ){Row(Modifier.padding(vertical=11.dp),horizontalArrangement=Arrangement.Center){
-                Text("$ic $name",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
-            }}
+    Column(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=5.dp)){
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+            SubButton("▱","Censo",Modifier.weight(1f)){onClick(SubTab.CENSO)}
+            SubButton("◉","Core",Modifier.weight(1f)){onClick(SubTab.CORE)}
+            SubButton("◇","Shadow",Modifier.weight(1f)){onClick(SubTab.SHADOW)}
+        }
+        Spacer(Modifier.height(5.dp))
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+            SubButton("🎟","Apuestas",Modifier.weight(1f)){onClick(SubTab.APUESTAS)}
+            SubButton("▣","Bank",Modifier.weight(1f)){onClick(SubTab.BANK)}
+            SubButton("⚗","Brier",Modifier.weight(1f)){onClick(SubTab.BRIER)}
+        }
+    }
+}
+
+@Composable
+private fun SubButton(icon:String,label:String,modifier:Modifier=Modifier,onClick:()->Unit){
+    Surface(
+        modifier=modifier.clickable{onClick()},
+        color=Card,
+        shape=RoundedCornerShape(12.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
+        Row(Modifier.padding(vertical=9.dp),horizontalArrangement=Arrangement.Center){
+            Text("$icon $label",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Bold)
         }
     }
 }
@@ -436,6 +448,97 @@ private fun CoreStat(label:String,value:String,modifier:Modifier=Modifier){
 }
 
 @Composable
+private fun ShadowScreen(shadows:List<ShadowPrediction>,onBack:()->Unit){
+    val latest=shadows
+        .groupBy{"${it.gameId}|${it.modelName}"}
+        .mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}
+    val models=latest.groupBy{it.modelName}.toSortedMap()
+
+    Column(Modifier.fillMaxSize()){
+        SimpleHeader(
+            "SHADOW LAB",
+            "Motores individuales congelados pregame · nunca modifican el Core.",
+            onBack
+        )
+
+        if(latest.isEmpty()){
+            EmptyState("Aún no hay Shadow snapshots.\nPulsa SINCRONIZAR antes del kickoff.")
+        }else{
+            LazyColumn(
+                Modifier.fillMaxSize().padding(horizontal=14.dp),
+                verticalArrangement=Arrangement.spacedBy(8.dp)
+            ){
+                item{
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                        CoreStat("MODELOS",models.size.toString(),Modifier.weight(1f))
+                        CoreStat("SNAPSHOTS",shadows.size.toString(),Modifier.weight(1f))
+                        CoreStat("JUEGOS",latest.map{it.gameId}.distinct().size.toString(),Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
+
+                models.forEach{(name,rows)->
+                    item{
+                        val settled=rows.filter{it.result=="WIN"||it.result=="LOSS"}
+                        val wins=settled.count{it.result=="WIN"}
+                        val hit=if(settled.isEmpty())null else wins*100.0/settled.size
+                        val brier=if(settled.isEmpty())null else settled.map{
+                            val y=if(it.result=="WIN")1.0 else 0.0
+                            (it.probability-y).pow(2)
+                        }.average()
+
+                        Surface(
+                            color=Card,
+                            shape=RoundedCornerShape(14.dp),
+                            border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                        ){
+                            Column(Modifier.fillMaxWidth().padding(12.dp)){
+                                Text(name,fontWeight=FontWeight.Black,fontSize=15.sp)
+                                Text(
+                                    "N ${settled.size} · W $wins · Hit ${hit?.format1() ?: "—"}% · Brier ${brier?.format3() ?: "—"}",
+                                    color=Muted,fontSize=10.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item{
+                    Spacer(Modifier.height(4.dp))
+                    Text("ÚLTIMOS SHADOWS",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Black)
+                }
+
+                items(latest.sortedByDescending{it.createdAt}.take(80)){x->
+                    ShadowRow(x)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShadowRow(x:ShadowPrediction){
+    Surface(
+        Modifier.fillMaxWidth(),
+        color=Card,
+        shape=RoundedCornerShape(13.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
+        Row(Modifier.padding(11.dp),verticalAlignment=Alignment.CenterVertically){
+            Column(Modifier.weight(1f)){
+                Text("${x.awayTeam} @ ${x.homeTeam}",fontWeight=FontWeight.Black,fontSize=12.sp)
+                Text("${x.modelName} · W${x.week} · ${x.result ?: "PENDIENTE"}",color=Muted,fontSize=9.sp)
+            }
+            Column(horizontalAlignment=Alignment.End){
+                Text("${x.pick} ${fmt(x.line)}",fontWeight=FontWeight.Black,fontSize=12.sp)
+                Text("${(x.probability*100).format1()}% · μ ${fmt(x.projection)}",color=Muted,fontSize=9.sp)
+            }
+        }
+    }
+}
+
+
+@Composable
 private fun BetsScreen(bets:List<BetRecord>,onBack:()->Unit){
     Column{
         SimpleHeader("APUESTAS","Control de picks seleccionados.",onBack)
@@ -472,23 +575,107 @@ private fun BankScreen(entries:List<BankEntry>,onAdd:(Double)->Unit,onBack:()->U
     }
 }
 
+private data class CalBucket(
+    val label:String,
+    val n:Int,
+    val actual:Double?,
+    val predicted:Double?,
+    val gap:Double?
+)
+
+private fun calibrationBuckets(rows:List<Pair<Double,Boolean>>):List<CalBucket>{
+    val specs=listOf(
+        Triple("50–54.9%",.50,.55),
+        Triple("55–59.9%",.55,.60),
+        Triple("60–64.9%",.60,.65),
+        Triple("65–69.9%",.65,.70),
+        Triple("70%+",.70,1.01)
+    )
+    return specs.map{(label,lo,hi)->
+        val r=rows.filter{it.first>=lo && it.first<hi}
+        if(r.isEmpty())CalBucket(label,0,null,null,null)
+        else{
+            val pred=r.map{it.first}.average()
+            val actual=r.count{it.second}.toDouble()/r.size
+            CalBucket(label,r.size,actual,pred,actual-pred)
+        }
+    }
+}
+
 @Composable
-private fun BrierScreen(preds:List<Prediction>,onBack:()->Unit){
-    val settled=preds
+private fun BrierScreen(preds:List<Prediction>,shadows:List<ShadowPrediction>,onBack:()->Unit){
+    val core=preds
+        .filter{it.analysisSource=="AUTO_CENSUS"}
         .groupBy{it.gameId}
         .mapNotNull{(_,rows)->rows.filter{it.result=="WIN"||it.result=="LOSS"}.maxByOrNull{it.createdAt}}
-    val brier=if(settled.isEmpty())null else settled.map{
+
+    val coreBrier=if(core.isEmpty())null else core.map{
         val y=if(it.result=="WIN")1.0 else 0.0
         (it.probability-y).pow(2)
     }.average()
-    Column{
-        SimpleHeader("BRIER LAB","Calibración real del modelo contra picks liquidados.",onBack)
-        Column(Modifier.padding(14.dp)){
-            Surface(color=Card,shape=RoundedCornerShape(16.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
-                Column(Modifier.fillMaxWidth().padding(16.dp)){
-                    Text("BRIER SCORE",color=Muted,fontSize=10.sp)
-                    Text(brier?.format3() ?: "—",fontWeight=FontWeight.Black,fontSize=32.sp,color=Green)
-                    Text("${settled.size} predicciones liquidadas · menor es mejor",color=Muted,fontSize=10.sp)
+
+    val buckets=calibrationBuckets(core.map{it.probability to (it.result=="WIN")})
+
+    val shadowLatest=shadows
+        .groupBy{"${it.gameId}|${it.modelName}"}
+        .mapNotNull{(_,rows)->rows.filter{it.result=="WIN"||it.result=="LOSS"}.maxByOrNull{it.createdAt}}
+    val shadowModels=shadowLatest.groupBy{it.modelName}
+
+    Column(Modifier.fillMaxSize()){
+        SimpleHeader("BRIER + CALIBRATION","Core oficial + auditoría Shadow por probabilidad.",onBack)
+
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal=14.dp),
+            verticalArrangement=Arrangement.spacedBy(8.dp)
+        ){
+            item{
+                Surface(color=Card,shape=RoundedCornerShape(16.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                    Column(Modifier.fillMaxWidth().padding(16.dp)){
+                        Text("CORE BRIER",color=Muted,fontSize=10.sp)
+                        Text(coreBrier?.format3() ?: "—",fontWeight=FontWeight.Black,fontSize=32.sp,color=Green)
+                        Text("${core.size} juegos oficiales liquidados · 1 cierre por partido",color=Muted,fontSize=10.sp)
+                    }
+                }
+            }
+
+            item{
+                Text("CALIBRACIÓN POR PROBABILIDAD",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Black)
+            }
+
+            items(buckets){b->
+                Surface(color=Card,shape=RoundedCornerShape(13.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                    Row(Modifier.fillMaxWidth().padding(11.dp),verticalAlignment=Alignment.CenterVertically){
+                        Text(b.label,fontWeight=FontWeight.Black,fontSize=11.sp,modifier=Modifier.weight(1f))
+                        Column(horizontalAlignment=Alignment.End){
+                            Text("N ${b.n} · Real ${b.actual?.times(100)?.format1() ?: "—"}%",fontSize=10.sp)
+                            Text(
+                                "Pred ${b.predicted?.times(100)?.format1() ?: "—"}% · Gap ${b.gap?.times(100)?.format1() ?: "—"} pp",
+                                color=Muted,fontSize=9.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            item{
+                Spacer(Modifier.height(4.dp))
+                Text("SHADOW BRIER",color=Muted,fontSize=10.sp,fontWeight=FontWeight.Black)
+            }
+
+            shadowModels.toSortedMap().forEach{(name,rows)->
+                item{
+                    val brier=if(rows.isEmpty())null else rows.map{
+                        val y=if(it.result=="WIN")1.0 else 0.0
+                        (it.probability-y).pow(2)
+                    }.average()
+                    val wins=rows.count{it.result=="WIN"}
+                    val hit=if(rows.isEmpty())null else wins*100.0/rows.size
+                    Surface(color=Card,shape=RoundedCornerShape(13.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                        Row(Modifier.fillMaxWidth().padding(11.dp)){
+                            Text(name,Modifier.weight(1f),fontWeight=FontWeight.Black,fontSize=11.sp)
+                            Text("N ${rows.size} · Hit ${hit?.format1() ?: "—"}% · B ${brier?.format3() ?: "—"}",color=Muted,fontSize=9.sp)
+                        }
+                    }
                 }
             }
         }
@@ -513,7 +700,8 @@ private fun SettingsScreen(season:Int,lastSync:Long?,onSeason:(Int)->Unit){
                 Text("CORE",color=Muted,fontSize=10.sp)
                 Text("Markov Drive 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Shadow Poisson 10%",fontSize=12.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("100,000 simulaciones por motor · FAST SYNC + DEEP cache 4h",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("100,000 simulaciones por motor · Shadow audita cada motor",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("FINAL LIVE/SYNC → Core + Shadow + Brier automático",color=Muted,fontSize=10.sp)
                 Spacer(Modifier.height(12.dp))
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
                 Text("SQLite local protegido por sandbox de Android",fontWeight=FontWeight.Bold,fontSize=12.sp)
