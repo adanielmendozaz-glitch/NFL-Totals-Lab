@@ -98,3 +98,21 @@ data class SyncSummary(
     val autoAnalyzed: Int = 0,
     val activeWeek: Int? = null
 )
+
+
+data class LiveGameState(
+    val awayTeam: String,
+    val homeTeam: String,
+    val awayScore: Int,
+    val homeScore: Int,
+    val period: Int,
+    val clock: String,
+    val detail: String,
+    val state: String,
+    val updatedAt: Long
+) {
+    val matchKey: String get() = "$awayTeam@$homeTeam"
+    val isLive: Boolean get() = state == "in"
+    val isFinal: Boolean get() = state == "post"
+    val total: Int get() = awayScore + homeScore
+}

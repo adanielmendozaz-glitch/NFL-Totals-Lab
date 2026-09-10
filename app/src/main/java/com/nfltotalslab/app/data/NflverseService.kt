@@ -2,6 +2,7 @@ package com.nfltotalslab.app.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
@@ -59,6 +60,66 @@ class NflverseService {
                 }
             }
         }
+    }
+
+    suspend fun fetchLiveScores(season:Int, week:Int): Map<String,LiveGameState> = withContext(Dispatchers.IO) {
+        val url="https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?limit=100&dates=$season&seasontype=2&week=$week"
+        val root=JSONObject(readAll(url))
+        val events=root.optJSONArray("events") ?: return@withContext emptyMap()
+        val out=linkedMapOf<String,LiveGameState>()
+
+        for(i in 0 until events.length()){
+            val event=events.optJSONObject(i) ?: continue
+            val competitions=event.optJSONArray("competitions") ?: continue
+            val competition=competitions.optJSONObject(0) ?: continue
+            val competitors=competition.optJSONArray("competitors") ?: continue
+
+            var awayTeam:String?=null
+            var homeTeam:String?=null
+            var awayScore:Int?=null
+            var homeScore:Int?=null
+
+            for(j in 0 until competitors.length()){
+                val c=competitors.optJSONObject(j) ?: continue
+                val team=c.optJSONObject("team")
+                val abbr=normalizeTeam(team?.optString("abbreviation","") ?: "")
+                val score=c.optString("score","").toIntOrNull()
+                when(c.optString("homeAway","")){
+                    "away" -> { awayTeam=abbr; awayScore=score }
+                    "home" -> { homeTeam=abbr; homeScore=score }
+                }
+            }
+
+            val a=awayTeam ?: continue
+            val h=homeTeam ?: continue
+            val status=competition.optJSONObject("status") ?: event.optJSONObject("status")
+            val type=status?.optJSONObject("type")
+            val state=type?.optString("state","pre") ?: "pre"
+            val detail=type?.optString("shortDetail","")
+                ?.ifBlank { type?.optString("detail","") ?: "" } ?: ""
+            val clock=status?.optString("displayClock","") ?: ""
+            val period=status?.optInt("period",0) ?: 0
+
+            val live=LiveGameState(
+                awayTeam=a,
+                homeTeam=h,
+                awayScore=awayScore ?: 0,
+                homeScore=homeScore ?: 0,
+                period=period,
+                clock=clock,
+                detail=detail,
+                state=state,
+                updatedAt=System.currentTimeMillis()
+            )
+            out[live.matchKey]=live
+        }
+        out
+    }
+
+    private fun normalizeTeam(raw:String):String = when(raw.uppercase()){
+        "LAR" -> "LA"
+        "WSH" -> "WAS"
+        else -> raw.uppercase()
     }
 
     private data class Agg(
@@ -151,6 +212,15 @@ class NflverseService {
         }
     }
 
+    private fun readAll(url:String):String{
+        val c=open(url)
+        return try{
+            c.inputStream.bufferedReader(Charsets.UTF_8).use{it.readText()}
+        }finally{
+            c.disconnect()
+        }
+    }
+
     private fun openText(url:String):BufferedReader{
         val c=open(url)
         return object:BufferedReader(InputStreamReader(c.inputStream,Charsets.UTF_8)){
@@ -162,7 +232,7 @@ class NflverseService {
         return (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod="GET"; connectTimeout=15000; readTimeout=120000
             instanceFollowRedirects=true
-            setRequestProperty("User-Agent","NFL-Totals-Lab-Android/0.2")
+            setRequestProperty("User-Agent","NFL-Totals-Lab-Android/0.4.1")
             connect()
             if(responseCode !in 200..299) throw IllegalStateException("HTTP $responseCode en $url")
         }

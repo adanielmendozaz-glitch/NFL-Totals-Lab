@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nfltotalslab.app.data.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.pow
@@ -44,9 +45,32 @@ fun NflTotalsApp(context:Context){
     var syncing by remember{mutableStateOf(false)}
     var syncMsg by remember{mutableStateOf<String?>(null)}
     var selected by remember{mutableStateOf<Prediction?>(null)}
+    var liveEnabled by remember{mutableStateOf(false)}
+    var liveLoading by remember{mutableStateOf(false)}
+    var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
 
     fun refresh(){
         games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();bets=repo.bets();bank=repo.bank()
+    }
+
+    LaunchedEffect(liveEnabled,season,games){
+        if(!liveEnabled)return@LaunchedEffect
+        while(liveEnabled){
+            val activeWeek=games.firstOrNull{!it.finished && it.gameType=="REG"}?.week
+                ?: games.maxOfOrNull{it.week}
+                ?: 1
+            liveLoading=true
+            val r=runCatching{repo.liveScores(season,activeWeek)}
+            r.onSuccess{
+                liveScores=it
+                val liveCount=it.values.count{x->x.isLive}
+                syncMsg=if(liveCount>0)"LIVE ✓ · $liveCount juego(s) en curso · refresco 60s" else "LIVE ✓ · sin juegos en curso"
+            }.onFailure{
+                syncMsg="LIVE observer: ${it.message}"
+            }
+            liveLoading=false
+            delay(60_000)
+        }
     }
 
     Scaffold(
@@ -56,9 +80,17 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.4 · AUTO CENSUS CORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.4.1 · FAST SYNC + LIVE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
-                    Text(if(syncing)"SYNC…" else "SQLite OK",color=if(syncing)Amber else Green,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                    Text(
+                        when{
+                            syncing -> "SYNC…"
+                            liveEnabled -> if(liveLoading)"LIVE…" else "LIVE ON"
+                            else -> "SQLite OK"
+                        },
+                        color=when{syncing->Amber;liveEnabled->Red;else->Green},
+                        fontWeight=FontWeight.Bold,fontSize=12.sp
+                    )
                 }
                 syncMsg?.let{Text(it,color=Muted,fontSize=11.sp)}
             }
@@ -84,15 +116,29 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.BRIER->BrierScreen(preds){sub=SubTab.NONE}
                 main==MainTab.JORNADA->ScheduleScreen(
                     games=games,preds=preds,syncing=syncing,
+                    liveScores=liveScores,liveEnabled=liveEnabled,liveLoading=liveLoading,
+                    onToggleLive={liveEnabled=!liveEnabled;if(!liveEnabled)liveScores=emptyMap()},
                     onSync={
                         scope.launch{
-                            syncing=true;syncMsg="Descargando calendario + PBP + roster + lesiones…"
-                            val r=runCatching{repo.sync(season)}
-                            syncMsg=r.fold(
-                                onSuccess={it.message},
-                                onFailure={"Error: ${it.message}"}
+                            syncing=true
+                            syncMsg="FAST · calendario, líneas y resultados…"
+                            val fast=runCatching{repo.fastSync(season)}
+                            if(fast.isFailure){
+                                syncMsg="FAST error: ${fast.exceptionOrNull()?.message}"
+                                syncing=false
+                                return@launch
+                            }
+
+                            refresh()
+                            syncMsg="${fast.getOrThrow().message} · DEEP DATA…"
+
+                            val deep=runCatching{repo.deepSync(season)}
+                            refresh()
+                            syncMsg=deep.fold(
+                                onSuccess={fast.getOrThrow().message+" · "+it.message},
+                                onFailure={fast.getOrThrow().message+" · DEEP error: "+it.message}
                             )
-                            syncing=false;refresh()
+                            syncing=false
                         }
                     },
                     onAnalyze={g->
@@ -141,7 +187,17 @@ private fun SubBar(onClick:(SubTab)->Unit){
 }
 
 @Composable
-private fun ScheduleScreen(games:List<GameRecord>,preds:List<Prediction>,syncing:Boolean,onSync:()->Unit,onAnalyze:(GameRecord)->Unit){
+private fun ScheduleScreen(
+    games:List<GameRecord>,
+    preds:List<Prediction>,
+    syncing:Boolean,
+    liveScores:Map<String,LiveGameState>,
+    liveEnabled:Boolean,
+    liveLoading:Boolean,
+    onToggleLive:()->Unit,
+    onSync:()->Unit,
+    onAnalyze:(GameRecord)->Unit
+){
     var week by remember(games){mutableIntStateOf(
         games.firstOrNull{!it.finished && it.gameType=="REG"}?.week ?: games.maxOfOrNull{it.week} ?: 1
     )}
@@ -160,7 +216,21 @@ private fun ScheduleScreen(games:List<GameRecord>,preds:List<Prediction>,syncing
             OutlinedButton(onClick={if(week>1)week--},modifier=Modifier.weight(1f)){Text("← Semana")}
             OutlinedButton(onClick={if(week<22)week++},modifier=Modifier.weight(1f)){Text("Semana →")}
         }
-        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick=onToggleLive,
+            modifier=Modifier.fillMaxWidth().padding(horizontal=14.dp,vertical=6.dp),
+            colors=ButtonDefaults.outlinedButtonColors(contentColor=if(liveEnabled)Red else Green)
+        ){
+            Text(
+                when{
+                    liveLoading -> "● LIVE · ACTUALIZANDO…"
+                    liveEnabled -> "● LIVE ON · AUTO 60s"
+                    else -> "○ ACTIVAR MARCADOR LIVE"
+                },
+                fontWeight=FontWeight.Black,fontSize=10.sp
+            )
+        }
+        Spacer(Modifier.height(2.dp))
         if(list.isEmpty()){
             EmptyState("No hay jornada local todavía.\nPulsa SINCRONIZAR.")
         }else{
@@ -172,7 +242,8 @@ private fun ScheduleScreen(games:List<GameRecord>,preds:List<Prediction>,syncing
             ){
                 items(list,key={it.gameId}){g->
                     val p=preds.firstOrNull{it.gameId==g.gameId}
-                    GameCard(g,p){onAnalyze(g)}
+                    val live=liveScores["${g.awayTeam}@${g.homeTeam}"]
+                    GameCard(g,p,live){onAnalyze(g)}
                 }
             }
         }
@@ -180,29 +251,50 @@ private fun ScheduleScreen(games:List<GameRecord>,preds:List<Prediction>,syncing
 }
 
 @Composable
-private fun GameCard(g:GameRecord,p:Prediction?,onClick:()->Unit){
-    val status=if(g.finished)"FINAL" else "${g.gameDay.takeLast(5)} ${g.gameTime}"
+private fun GameCard(g:GameRecord,p:Prediction?,live:LiveGameState?,onClick:()->Unit){
+    val liveNow=live?.isLive==true
+    val finalNow=g.finished || live?.isFinal==true
+    val status=when{
+        liveNow -> live?.let{"● LIVE · ${it.detail.ifBlank{"Q${it.period} ${it.clock}"}}"} ?: "● LIVE"
+        finalNow -> "FINAL"
+        else -> "${g.gameDay.takeLast(5)} ${g.gameTime}"
+    }
+    val awayScore=if(liveNow || live?.isFinal==true)live?.awayScore else g.awayScore
+    val homeScore=if(liveNow || live?.isFinal==true)live?.homeScore else g.homeScore
     Surface(
-        modifier=Modifier.fillMaxWidth().clickable(enabled=!g.finished){onClick()},
+        modifier=Modifier.fillMaxWidth().clickable(enabled=!finalNow){onClick()},
         color=Card,shape=RoundedCornerShape(18.dp),
-        border=androidx.compose.foundation.BorderStroke(1.dp,if(p?.classification?.startsWith("JUGABLE")==true)Green else Border)
+        border=androidx.compose.foundation.BorderStroke(
+            1.dp,
+            when{
+                liveNow->Red
+                p?.classification?.startsWith("JUGABLE")==true->Green
+                else->Border
+            }
+        )
     ){
         Column{
             Box(Modifier.fillMaxWidth().height(4.dp).background(if(p?.classification?.startsWith("JUGABLE")==true)Green else Blue))
             Column(Modifier.padding(12.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically){
-                    Text(status,color=if(g.finished)Muted else Green,fontWeight=FontWeight.Black,fontSize=10.sp,modifier=Modifier.weight(1f))
+                    Text(status,color=when{liveNow->Red;finalNow->Muted;else->Green},fontWeight=FontWeight.Black,fontSize=10.sp,modifier=Modifier.weight(1f))
                     Surface(color=Panel,shape=RoundedCornerShape(20.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
                         Text("O/U ${g.totalLine?.let{fmt(it)} ?: "—"}",Modifier.padding(horizontal=8.dp,vertical=4.dp),fontWeight=FontWeight.Black,fontSize=10.sp)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                TeamLine(g.awayTeam,g.awayScore)
+                TeamLine(g.awayTeam,awayScore)
                 Spacer(Modifier.height(7.dp))
-                TeamLine(g.homeTeam,g.homeScore)
+                TeamLine(g.homeTeam,homeScore)
                 HorizontalDivider(Modifier.padding(vertical=10.dp),color=Border)
                 Text("Week ${g.week} · ${g.roof ?: "roof —"}",color=Muted,fontSize=10.sp)
                 if(g.wind!=null || g.temp!=null) Text("${g.temp?.let{"${it.toInt()}°F"} ?: ""} ${g.wind?.let{"· viento ${it.toInt()}"} ?: ""}",color=Muted,fontSize=10.sp)
+                if(liveNow || live?.isFinal==true){
+                    Text(
+                        "Marcador ${awayScore ?: 0}-${homeScore ?: 0} · total ${live?.total ?: ((awayScore?:0)+(homeScore?:0))}${p?.let{" · línea ${fmt(it.line)}"} ?: ""}",
+                        color=if(liveNow)Red else Muted,fontSize=10.sp,fontWeight=FontWeight.Bold
+                    )
+                }
                 if(p!=null){
                     Spacer(Modifier.height(9.dp))
                     Surface(color=Panel,shape=RoundedCornerShape(12.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
@@ -213,7 +305,7 @@ private fun GameCard(g:GameRecord,p:Prediction?,onClick:()->Unit){
                         }
                     }
                 } else {
-                    Text(if(g.finished)"Final · sin análisis postgame" else "Toca el cuadro para analizar",Modifier.padding(top=8.dp),color=Muted,fontSize=9.sp)
+                    Text(if(finalNow)"Final · sin análisis postgame" else "Toca el cuadro para analizar",Modifier.padding(top=8.dp),color=Muted,fontSize=9.sp)
                 }
             }
         }
@@ -421,7 +513,7 @@ private fun SettingsScreen(season:Int,lastSync:Long?,onSeason:(Int)->Unit){
                 Text("CORE",color=Muted,fontSize=10.sp)
                 Text("Markov Drive 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Shadow Poisson 10%",fontSize=12.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("100,000 simulaciones por motor · AUTO CENSUS al sincronizar",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("100,000 simulaciones por motor · FAST SYNC + DEEP cache 4h",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
                 Spacer(Modifier.height(12.dp))
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
                 Text("SQLite local protegido por sandbox de Android",fontWeight=FontWeight.Bold,fontSize=12.sp)

@@ -73,3 +73,14 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Migración SQLite V2 -> V3 es aditiva y conserva historial, apuestas y bank.
 - Los pesos de motores permanecen intactos.
 - GitHub Actions fija y reutiliza la debug signing key desde V0.4 para que futuras APK puedan actualizarse sin borrar SQLite.
+
+## V0.4.1 · Fast Sync + Live Tracker
+
+- FAST SYNC carga primero calendario, líneas, resultados y liquidaciones.
+- La jornada aparece antes de iniciar el procesamiento pesado de PBP.
+- DEEP DATA guarda métricas y las reutiliza durante 4 horas.
+- Auto Census sigue separado de Apuestas.
+- LIVE Tracker muestra marcador, estado, cuarto/reloj y total actual.
+- LIVE refresca cada 60 segundos solo mientras está activado.
+- El marcador LIVE no modifica ni reentrena el pick pregame.
+- Si falla el feed LIVE, el Core y SQLite siguen funcionando.
