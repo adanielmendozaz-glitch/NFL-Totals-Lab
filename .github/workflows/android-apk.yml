@@ -42,5 +42,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V0.6-Audit-Lab
+          name: NFL-Totals-Lab-V0.6.1-Visual-Pack
           path: app/build/outputs/apk/debug/app-debug.apk

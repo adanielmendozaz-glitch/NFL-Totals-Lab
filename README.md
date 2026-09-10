@@ -118,3 +118,10 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Audit Lab es observacional: no altera pesos ni picks.
 - LIVE FINAL refresca inmediatamente Core, Shadow, Brier y Audit.
 - Sin migración de base de datos: conserva íntegro SQLite V0.5.
+
+## V0.6.1 · Visual Pack
+
+- Branding para los 32 equipos NFL.
+- Logos externos en runtime; no se guardan dentro del repo.
+- Fallback automático a badge propio si un logo falla.
+- Core, Shadow, Brier y Audit permanecen intactos.

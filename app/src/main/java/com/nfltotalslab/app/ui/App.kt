@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nfltotalslab.app.data.*
 import com.nfltotalslab.app.audit.AuditLab
+import com.nfltotalslab.app.branding.TeamBadge
+import com.nfltotalslab.app.branding.teamBrand
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -83,7 +85,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.6 · AUDIT LAB",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.6.1 · VISUAL PACK",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -328,13 +330,14 @@ private fun GameCard(g:GameRecord,p:Prediction?,live:LiveGameState?,onClick:()->
     }
 }
 
-@Composable private fun TeamLine(team:String,score:Int?){
-    Row(verticalAlignment=Alignment.CenterVertically){
-        Surface(color=Panel,shape=RoundedCornerShape(8.dp),modifier=Modifier.size(34.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
-            Box(contentAlignment=Alignment.Center){Text(team.take(3),fontWeight=FontWeight.Black,fontSize=10.sp,color=Blue)}
-        }
-        Text(team,Modifier.padding(start=8.dp).weight(1f),fontWeight=FontWeight.Black,fontSize=17.sp)
-        Text(score?.toString() ?: "—",fontWeight=FontWeight.Black,fontSize=22.sp)
+@Composable
+private fun TeamLine(team:String,score:Int?){
+    val brand=teamBrand(team)
+    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+        TeamBadge(team,30.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(team,Modifier.weight(1f),fontWeight=FontWeight.Black,fontSize=17.sp)
+        Text(score?.toString() ?: "—",color=brand.primary,fontWeight=FontWeight.Black,fontSize=22.sp)
     }
 }
 
