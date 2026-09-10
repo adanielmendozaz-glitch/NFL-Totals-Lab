@@ -56,7 +56,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.2 · NATIVE DRIVE CORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.3 · NATIVE DRIVE CORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(if(syncing)"SYNC…" else "SQLite OK",color=if(syncing)Amber else Green,fontWeight=FontWeight.Bold,fontSize=12.sp)
                 }
@@ -176,7 +176,7 @@ private fun ScheduleScreen(games:List<GameRecord>,preds:List<Prediction>,syncing
 private fun GameCard(g:GameRecord,p:Prediction?,onClick:()->Unit){
     val status=if(g.finished)"FINAL" else "${g.gameDay.takeLast(5)} ${g.gameTime}"
     Surface(
-        modifier=Modifier.fillMaxWidth().clickable{onClick()},
+        modifier=Modifier.fillMaxWidth().clickable(enabled=!g.finished){onClick()},
         color=Card,shape=RoundedCornerShape(18.dp),
         border=androidx.compose.foundation.BorderStroke(1.dp,if(p?.classification?.startsWith("JUGABLE")==true)Green else Border)
     ){
@@ -206,7 +206,7 @@ private fun GameCard(g:GameRecord,p:Prediction?,onClick:()->Unit){
                         }
                     }
                 } else {
-                    Text("Toca el cuadro para analizar",Modifier.padding(top=8.dp),color=Muted,fontSize=9.sp)
+                    Text(if(g.finished)"Final · sin análisis postgame" else "Toca el cuadro para analizar",Modifier.padding(top=8.dp),color=Muted,fontSize=9.sp)
                 }
             }
         }

@@ -53,3 +53,11 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - market-line movement,
 - Shadow Mode / Gating Mode avanzados,
 - backup/importación externa del Data Vault.
+
+## V0.3 · Integrity Fix
+
+- Corrige turnover por jugada -> probabilidad por drive.
+- Separa RNG de turnover y scoring.
+- Liquida apuestas automáticamente al sincronizar finales.
+- Bloquea análisis de partidos ya finalizados.
+- Conserva Ranking/Censo/Apuestas/Bank en SQLite local.

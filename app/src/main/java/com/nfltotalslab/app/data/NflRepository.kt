@@ -41,8 +41,14 @@ class NflRepository(
         }
         db.upsertMetrics(metrics)
         db.settlePredictions(schedule)
+        val settledBets = settlePendingBets(db)
         db.putKv("last_sync",System.currentTimeMillis().toString())
-        SyncSummary(schedule.size,pbp.size,roster.second,injuries.second,"Sincronización NFL completada")
+        val msg = if (settledBets > 0) {
+            "Sincronización NFL completada · $settledBets apuesta(s) liquidada(s)"
+        } else {
+            "Sincronización NFL completada"
+        }
+        SyncSummary(schedule.size,pbp.size,roster.second,injuries.second,msg)
     }
 
     fun games(season:Int)=db.loadGames(season)

@@ -132,13 +132,20 @@ class TotalsEngine(private val simulations:Int=100_000) {
     private fun simulatePpdDrives(n:Int,ppd:Double,turnoverRate:Double):Int{
         val td=(ppd/7.0*.67).coerceIn(.08,.38)
         val fg=(ppd/3.0*.25).coerceIn(.06,.28)
+
+        // nflverse entrega turnovers / jugada; el simulador trabaja por drive.
+        val perPlayTurnover=turnoverRate.coerceIn(.002,.06)
+        val turnoverPerDrive=(1.0-(1.0-perPlayTurnover).pow(6.2)).coerceIn(.01,.30)
+
         var s=0
         repeat(n){
-            val r=rng.nextDouble()
-            if(r < turnoverRate.coerceIn(.01,.12)) return@repeat
+            if(rng.nextDouble() < turnoverPerDrive) return@repeat
+
+            // Sorteo independiente para el resultado del drive.
+            val outcome=rng.nextDouble()
             when {
-                r<td -> s+=7
-                r<td+fg -> s+=3
+                outcome<td -> s+=7
+                outcome<td+fg -> s+=3
             }
         }
         return s
