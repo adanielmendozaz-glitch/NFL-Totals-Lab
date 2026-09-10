@@ -61,3 +61,15 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Liquida apuestas automáticamente al sincronizar finales.
 - Bloquea análisis de partidos ya finalizados.
 - Conserva Ranking/Censo/Apuestas/Bank en SQLite local.
+
+## V0.4 · Auto Census Core
+
+- SINCRONIZAR analiza automáticamente todos los juegos no finalizados de la jornada REG activa con línea O/U.
+- AUTO_CENSUS no crea apuestas: solo alimenta Censo, Ranking y CORE.
+- Deduplicación por inputs: si línea y métricas no cambian, no crea snapshots repetidos.
+- Si cambian la línea o métricas efectivamente usadas por el motor, conserva un nuevo snapshot auditable.
+- CORE muestra un registro vigente por partido y contadores AUTO/MANUAL/FINAL.
+- Brier usa una sola predicción vigente por partido para no inflar calibración por reanálisis.
+- Migración SQLite V2 -> V3 es aditiva y conserva historial, apuestas y bank.
+- Los pesos de motores permanecen intactos.
+- GitHub Actions fija y reutiliza la debug signing key desde V0.4 para que futuras APK puedan actualizarse sin borrar SQLite.

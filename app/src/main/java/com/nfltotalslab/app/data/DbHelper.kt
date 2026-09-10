@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 2) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE games(
@@ -66,6 +66,9 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
                 projection REAL NOT NULL,
                 classification TEXT NOT NULL,
                 engines TEXT NOT NULL,
+                analysis_source TEXT NOT NULL DEFAULT 'MANUAL',
+                model_version TEXT NOT NULL DEFAULT '0.3',
+                input_key TEXT NOT NULL DEFAULT '',
                 final_total INTEGER,
                 result TEXT,
                 created_at INTEGER NOT NULL
@@ -104,7 +107,6 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // V0.2 is the first native schema. Future migrations go here.
         if (oldVersion < 2) {
             db.execSQL("DROP TABLE IF EXISTS games")
             db.execSQL("DROP TABLE IF EXISTS team_metrics")
@@ -113,6 +115,15 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             db.execSQL("DROP TABLE IF EXISTS bank")
             db.execSQL("DROP TABLE IF EXISTS kv")
             onCreate(db)
+            return
+        }
+
+        if (oldVersion < 3) {
+            db.execSQL("ALTER TABLE predictions ADD COLUMN analysis_source TEXT NOT NULL DEFAULT 'MANUAL'")
+            db.execSQL("ALTER TABLE predictions ADD COLUMN model_version TEXT NOT NULL DEFAULT '0.3'")
+            db.execSQL("ALTER TABLE predictions ADD COLUMN input_key TEXT NOT NULL DEFAULT ''")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_predictions_game_created ON predictions(game_id, created_at)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_predictions_auto_input ON predictions(game_id, analysis_source, input_key)")
         }
     }
 
@@ -208,6 +219,9 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             put("pick",p.pick); put("probability",p.probability); put("projection",p.projection)
             put("classification",p.classification)
             put("engines", p.engines.joinToString("|") { "${it.name},${it.projection},${it.pOver},${it.pUnder}" })
+            put("analysis_source",p.analysisSource)
+            put("model_version",p.modelVersion)
+            put("input_key",p.inputKey)
             if (p.finalTotal == null) putNull("final_total") else put("final_total",p.finalTotal)
             put("result",p.result); put("created_at",p.createdAt)
         }
@@ -237,22 +251,44 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         val out=mutableListOf<Prediction>()
         readableDatabase.rawQuery("""
             SELECT id,game_id,season,week,away_team,home_team,line,pick,probability,projection,
-            classification,engines,final_total,result,created_at FROM predictions ORDER BY created_at DESC
+            classification,engines,analysis_source,model_version,input_key,final_total,result,created_at
+            FROM predictions ORDER BY created_at DESC
         """.trimIndent(), null).use { c ->
             while(c.moveToNext()){
-                val engines=(c.getString(11) ?: "").split("|").mapNotNull { s ->
-                    val p=s.split(",")
-                    if(p.size==4) runCatching { EngineSlice(p[0],p[1].toDouble(),p[2].toDouble(),p[3].toDouble()) }.getOrNull() else null
+                val engines=(c.getString(11) ?: "").split("|").mapNotNull { row ->
+                    val ep=row.split(",")
+                    if(ep.size==4) runCatching { EngineSlice(ep[0],ep[1].toDouble(),ep[2].toDouble(),ep[3].toDouble()) }.getOrNull() else null
                 }
                 out += Prediction(
-                    c.getLong(0),c.getString(1),c.getInt(2),c.getInt(3),c.getString(4),c.getString(5),
-                    c.getDouble(6),c.getString(7),c.getDouble(8),c.getDouble(9),c.getString(10),
-                    c.getLong(14),if(c.isNull(12))null else c.getInt(12),if(c.isNull(13))null else c.getString(13),engines
+                    id=c.getLong(0),
+                    gameId=c.getString(1),
+                    season=c.getInt(2),
+                    week=c.getInt(3),
+                    awayTeam=c.getString(4),
+                    homeTeam=c.getString(5),
+                    line=c.getDouble(6),
+                    pick=c.getString(7),
+                    probability=c.getDouble(8),
+                    projection=c.getDouble(9),
+                    classification=c.getString(10),
+                    createdAt=c.getLong(17),
+                    finalTotal=if(c.isNull(15))null else c.getInt(15),
+                    result=if(c.isNull(16))null else c.getString(16),
+                    engines=engines,
+                    analysisSource=c.getString(12) ?: "MANUAL",
+                    modelVersion=c.getString(13) ?: "0.3",
+                    inputKey=c.getString(14) ?: ""
                 )
             }
         }
         return out
     }
+
+    fun hasAutoPrediction(gameId:String,inputKey:String):Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM predictions WHERE game_id=? AND analysis_source='AUTO_CENSUS' AND input_key=? LIMIT 1",
+            arrayOf(gameId,inputKey)
+        ).use { it.moveToFirst() }
 
     fun saveBet(b: BetRecord) {
         val v=ContentValues().apply{

@@ -27,7 +27,7 @@ import java.util.*
 import kotlin.math.pow
 
 private enum class MainTab{JORNADA,RANKING,EQUIPOS,AJUSTES}
-private enum class SubTab{NONE,CENSO,APUESTAS,BANK,BRIER}
+private enum class SubTab{NONE,CENSO,CORE,APUESTAS,BANK,BRIER}
 
 @Composable
 fun NflTotalsApp(context:Context){
@@ -56,7 +56,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.3 · NATIVE DRIVE CORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.4 · AUTO CENSUS CORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(if(syncing)"SYNC…" else "SQLite OK",color=if(syncing)Amber else Green,fontWeight=FontWeight.Bold,fontSize=12.sp)
                 }
@@ -78,6 +78,7 @@ fun NflTotalsApp(context:Context){
         Box(Modifier.fillMaxSize().padding(pad).background(Bg)){
             when{
                 sub==SubTab.CENSO->CensusScreen(preds){sub=SubTab.NONE}
+                sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.APUESTAS->BetsScreen(bets){sub=SubTab.NONE}
                 sub==SubTab.BANK->BankScreen(bank,onAdd={repo.addBank(it,"Ajuste manual");refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds){sub=SubTab.NONE}
@@ -88,7 +89,7 @@ fun NflTotalsApp(context:Context){
                             syncing=true;syncMsg="Descargando calendario + PBP + roster + lesiones…"
                             val r=runCatching{repo.sync(season)}
                             syncMsg=r.fold(
-                                onSuccess={"${it.scheduleGames} juegos · ${it.pbpTeams} equipos PBP · roster ${it.rosterPlayers}"},
+                                onSuccess={it.message},
                                 onFailure={"Error: ${it.message}"}
                             )
                             syncing=false;refresh()
@@ -121,8 +122,14 @@ fun NflTotalsApp(context:Context){
 @Composable
 private fun SubBar(onClick:(SubTab)->Unit){
     Row(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=6.dp),horizontalArrangement=Arrangement.spacedBy(7.dp)){
-        listOf("▱" to SubTab.CENSO,"🎟" to SubTab.APUESTAS,"▣" to SubTab.BANK,"⚗" to SubTab.BRIER).forEach{(ic,t)->
-            val name=when(t){SubTab.CENSO->"Censo";SubTab.APUESTAS->"Apuestas";SubTab.BANK->"Bank";else->"Brier LAB"}
+        listOf("▱" to SubTab.CENSO,"◉" to SubTab.CORE,"🎟" to SubTab.APUESTAS,"▣" to SubTab.BANK,"⚗" to SubTab.BRIER).forEach{(ic,t)->
+            val name=when(t){
+                SubTab.CENSO->"Censo"
+                SubTab.CORE->"Core"
+                SubTab.APUESTAS->"Apuestas"
+                SubTab.BANK->"Bank"
+                else->"Brier"
+            }
             Surface(
                 modifier=Modifier.weight(1f).clickable{onClick(t)},
                 color=Card,shape=RoundedCornerShape(12.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)
@@ -143,7 +150,7 @@ private fun ScheduleScreen(games:List<GameRecord>,preds:List<Prediction>,syncing
         Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){
                 Text("JORNADA · WEEK $week",color=Text,fontWeight=FontWeight.Black,fontSize=18.sp)
-                Text("${list.size} partidos · toca una tarjeta para analizar",color=Muted,fontSize=11.sp)
+                Text("${list.size} partidos · SYNC analiza jornada completa · toque = reanálisis manual",color=Muted,fontSize=11.sp)
             }
             Button(onClick=onSync,enabled=!syncing,colors=ButtonDefaults.buttonColors(containerColor=Green)){
                 Text(if(syncing)"SYNC…" else "SINCRONIZAR",fontSize=10.sp,fontWeight=FontWeight.Black)
@@ -200,7 +207,7 @@ private fun GameCard(g:GameRecord,p:Prediction?,onClick:()->Unit){
                     Spacer(Modifier.height(9.dp))
                     Surface(color=Panel,shape=RoundedCornerShape(12.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
                         Column(Modifier.padding(9.dp)){
-                            Text("FULL GAME O/U",color=Muted,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                            Text("FULL GAME O/U · ${if(p.analysisSource=="AUTO_CENSUS")"AUTO" else "MANUAL"}",color=Muted,fontSize=9.sp,fontWeight=FontWeight.Bold)
                             Text("${p.pick} ${fmt(p.line)} · ${(p.probability*100).toInt()}%",color=if(p.classification.startsWith("JUGABLE"))Green else Amber,fontWeight=FontWeight.Black,fontSize=12.sp)
                             Text(p.classification,color=Muted,fontSize=9.sp)
                         }
@@ -242,7 +249,7 @@ private fun PredictionRow(p:Prediction,onClick:()->Unit){
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){
                 Text("${p.awayTeam} @ ${p.homeTeam}",fontWeight=FontWeight.Black)
-                Text("μ ${fmt(p.projection)} · Week ${p.week} · ${p.result ?: "PENDIENTE"}",color=Muted,fontSize=10.sp)
+                Text("μ ${fmt(p.projection)} · W${p.week} · ${if(p.analysisSource=="AUTO_CENSUS")"AUTO" else "MANUAL"} · ${p.result ?: "PENDIENTE"}",color=Muted,fontSize=10.sp)
             }
             Column(horizontalAlignment=Alignment.End){
                 Text("${p.pick} ${fmt(p.line)}",fontWeight=FontWeight.Black,color=if(p.classification.startsWith("JUGABLE"))Green else Text)
@@ -286,9 +293,53 @@ private fun TeamsScreen(metrics:List<TeamMetrics>){
 
 @Composable
 private fun CensusScreen(preds:List<Prediction>,onBack:()->Unit){
-    SimpleHeader("CENSO","Cada análisis queda guardado; los finales se liquidan al sincronizar.",onBack)
+    SimpleHeader("CENSO","Snapshots AUTO + reanálisis manuales. Historial completo y persistente.",onBack)
     LazyColumn(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
         items(preds){PredictionRow(it){}}
+    }
+}
+
+
+@Composable
+private fun CoreScreen(preds:List<Prediction>,onBack:()->Unit){
+    val latest=preds.groupBy{it.gameId}.mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}.sortedByDescending{it.createdAt}
+    val autoSnapshots=preds.count{it.analysisSource=="AUTO_CENSUS"}
+    val manualSnapshots=preds.count{it.analysisSource=="MANUAL"}
+    val settled=latest.count{it.result=="WIN"||it.result=="LOSS"||it.result=="PUSH"}
+
+    Column(Modifier.fillMaxSize()){
+        SimpleHeader("CORE","1 registro vigente por juego · dataset de observación, sin tocar pesos.",onBack)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal=14.dp),
+            horizontalArrangement=Arrangement.spacedBy(8.dp)
+        ){
+            CoreStat("JUEGOS",latest.size.toString(),Modifier.weight(1f))
+            CoreStat("AUTO",autoSnapshots.toString(),Modifier.weight(1f))
+            CoreStat("MANUAL",manualSnapshots.toString(),Modifier.weight(1f))
+            CoreStat("FINAL",settled.toString(),Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        LazyColumn(
+            Modifier.weight(1f).padding(horizontal=14.dp),
+            verticalArrangement=Arrangement.spacedBy(8.dp)
+        ){
+            items(latest){p->PredictionRow(p){}}
+        }
+    }
+}
+
+@Composable
+private fun CoreStat(label:String,value:String,modifier:Modifier=Modifier){
+    Surface(
+        modifier=modifier,
+        color=Card,
+        shape=RoundedCornerShape(12.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
+        Column(Modifier.padding(vertical=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
+            Text(label,color=Muted,fontSize=8.sp,fontWeight=FontWeight.Bold)
+            Text(value,fontWeight=FontWeight.Black,fontSize=16.sp,color=Green)
+        }
     }
 }
 
@@ -331,7 +382,9 @@ private fun BankScreen(entries:List<BankEntry>,onAdd:(Double)->Unit,onBack:()->U
 
 @Composable
 private fun BrierScreen(preds:List<Prediction>,onBack:()->Unit){
-    val settled=preds.filter{it.result=="WIN"||it.result=="LOSS"}
+    val settled=preds
+        .groupBy{it.gameId}
+        .mapNotNull{(_,rows)->rows.filter{it.result=="WIN"||it.result=="LOSS"}.maxByOrNull{it.createdAt}}
     val brier=if(settled.isEmpty())null else settled.map{
         val y=if(it.result=="WIN")1.0 else 0.0
         (it.probability-y).pow(2)
@@ -368,7 +421,7 @@ private fun SettingsScreen(season:Int,lastSync:Long?,onSeason:(Int)->Unit){
                 Text("CORE",color=Muted,fontSize=10.sp)
                 Text("Markov Drive 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Shadow Poisson 10%",fontSize=12.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("100,000 simulaciones por motor",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("100,000 simulaciones por motor · AUTO CENSUS al sincronizar",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
                 Spacer(Modifier.height(12.dp))
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
                 Text("SQLite local protegido por sandbox de Android",fontWeight=FontWeight.Bold,fontSize=12.sp)
@@ -389,6 +442,7 @@ private fun PredictionDialog(p:Prediction,onDismiss:()->Unit,onBet:()->Unit){
             Column{
                 Text("${p.pick} ${fmt(p.line)}",fontWeight=FontWeight.Black,fontSize=27.sp)
                 Text("${(p.probability*100).format1()}% · Proyección ${fmt(p.projection)}",color=Green,fontWeight=FontWeight.Bold)
+                Text("${if(p.analysisSource=="AUTO_CENSUS")"AUTO CENSUS" else "MANUAL"} · Core ${p.modelVersion}",color=Muted,fontSize=10.sp)
                 Spacer(Modifier.height(12.dp))
                 p.engines.forEach{e->
                     Row(Modifier.fillMaxWidth().padding(vertical=3.dp)){

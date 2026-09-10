@@ -9,6 +9,7 @@ class NflRepository(
     private val api:NflverseService=NflverseService()
 ){
     private val engine=TotalsEngine(100_000)
+    private val modelVersion="0.4"
 
     suspend fun sync(season:Int):SyncSummary = withContext(Dispatchers.IO){
         val schedule=api.fetchSchedule(season)
@@ -18,7 +19,7 @@ class NflRepository(
         val roster = runCatching { api.fetchRosterCounts(season) }.getOrElse { emptyMap<String,Int>() to 0 }
         val injuries = runCatching { api.fetchInjuryCounts(season) }.getOrElse { emptyMap<String,Int>() to 0 }
 
-        val scoring=mutableMapOf<String,Pair<Int,Int>>() // team -> games, points
+        val scoring=mutableMapOf<String,Pair<Int,Int>>()
         schedule.filter{it.finished}.forEach{g->
             val a=scoring[g.awayTeam] ?: (0 to 0)
             scoring[g.awayTeam]=(a.first+1 to a.second+(g.awayScore?:0))
@@ -40,15 +41,61 @@ class NflRepository(
             )
         }
         db.upsertMetrics(metrics)
+
         db.settlePredictions(schedule)
         val settledBets = settlePendingBets(db)
-        db.putKv("last_sync",System.currentTimeMillis().toString())
-        val msg = if (settledBets > 0) {
-            "Sincronización NFL completada · $settledBets apuesta(s) liquidada(s)"
-        } else {
-            "Sincronización NFL completada"
+
+        val activeWeek=schedule
+            .asSequence()
+            .filter{it.gameType=="REG" && !it.finished}
+            .map{it.week}
+            .minOrNull()
+
+        val metricMap=metrics.associateBy{it.team}
+        val candidates=if(activeWeek==null) emptyList() else schedule.filter{
+            it.gameType=="REG" &&
+            it.week==activeWeek &&
+            !it.finished &&
+            it.totalLine!=null
         }
-        SyncSummary(schedule.size,pbp.size,roster.second,injuries.second,msg)
+
+        val autoAnalyzed=withContext(Dispatchers.Default){
+            var count=0
+            candidates.forEach{game->
+                val away=metricMap[game.awayTeam]
+                val home=metricMap[game.homeTeam]
+                val key=inputKey(game,away,home)
+                if(!db.hasAutoPrediction(game.gameId,key)){
+                    val p=engine.predict(game,away,home).copy(
+                        analysisSource="AUTO_CENSUS",
+                        modelVersion=modelVersion,
+                        inputKey=key
+                    )
+                    db.savePrediction(p)
+                    count++
+                }
+            }
+            count
+        }
+
+        db.putKv("last_sync",System.currentTimeMillis().toString())
+        db.putKv("active_week",activeWeek?.toString() ?: "")
+
+        val bits=mutableListOf<String>()
+        bits += "Sync NFL completado"
+        activeWeek?.let{bits += "Week $it"}
+        bits += "AUTO $autoAnalyzed"
+        if(settledBets>0) bits += "$settledBets apuesta(s) liquidada(s)"
+
+        SyncSummary(
+            scheduleGames=schedule.size,
+            pbpTeams=pbp.size,
+            rosterPlayers=roster.second,
+            injuryRows=injuries.second,
+            message=bits.joinToString(" · "),
+            autoAnalyzed=autoAnalyzed,
+            activeWeek=activeWeek
+        )
     }
 
     fun games(season:Int)=db.loadGames(season)
@@ -58,8 +105,16 @@ class NflRepository(
     fun bank()=db.loadBank()
 
     suspend fun analyze(game:GameRecord):Prediction = withContext(Dispatchers.Default){
+        require(!game.finished){"No se permite análisis postgame"}
+        require(game.totalLine!=null){"El partido no tiene línea O/U disponible"}
         val m=db.loadMetrics(game.season).associateBy{it.team}
-        val p=engine.predict(game,m[game.awayTeam],m[game.homeTeam])
+        val away=m[game.awayTeam]
+        val home=m[game.homeTeam]
+        val p=engine.predict(game,away,home).copy(
+            analysisSource="MANUAL",
+            modelVersion=modelVersion,
+            inputKey=inputKey(game,away,home)
+        )
         db.savePrediction(p)
         p
     }
@@ -70,4 +125,16 @@ class NflRepository(
 
     fun addBank(amount:Double,note:String)=db.saveBankEntry(BankEntry(amount=amount,note=note))
     fun lastSync():Long?=db.getKv("last_sync")?.toLongOrNull()
+
+    private fun inputKey(game:GameRecord,away:TeamMetrics?,home:TeamMetrics?):String{
+        fun m(x:TeamMetrics?):String = if(x==null) "NA" else listOf(
+            x.games,x.plays,x.drives,x.offEpaPerPlay,x.defEpaAllowedPerPlay,
+            x.successRate,x.explosiveRate,x.turnoverRate,x.tdPerDrive,
+            x.fgPerDrive,x.drivesPerGame
+        ).joinToString(",")
+
+        return listOf(
+            modelVersion,game.gameId,game.totalLine,m(away),m(home)
+        ).joinToString("|")
+    }
 }

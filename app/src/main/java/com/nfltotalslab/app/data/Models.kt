@@ -64,7 +64,10 @@ data class Prediction(
     val createdAt: Long = System.currentTimeMillis(),
     val finalTotal: Int? = null,
     val result: String? = null,
-    val engines: List<EngineSlice> = emptyList()
+    val engines: List<EngineSlice> = emptyList(),
+    val analysisSource: String = "MANUAL",
+    val modelVersion: String = "0.4",
+    val inputKey: String = ""
 )
 
 data class BetRecord(
@@ -91,5 +94,7 @@ data class SyncSummary(
     val pbpTeams: Int = 0,
     val rosterPlayers: Int = 0,
     val injuryRows: Int = 0,
-    val message: String = ""
+    val message: String = "",
+    val autoAnalyzed: Int = 0,
+    val activeWeek: Int? = null
 )
