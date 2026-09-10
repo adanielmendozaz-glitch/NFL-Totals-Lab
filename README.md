@@ -125,3 +125,10 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Logos externos en runtime; no se guardan dentro del repo.
 - Fallback automático a badge propio si un logo falla.
 - Core, Shadow, Brier y Audit permanecen intactos.
+
+## V0.6.2 · Visual Polish + Integrity
+
+- Logos en Jornada, Ranking, Core, Censo, Shadow, Equipos y filas de equipo de Audit.
+- Marcadores con contraste alto; el color del equipo queda como acento.
+- Conserva un marcador FINAL capturado por LIVE aunque nflverse tarde en actualizar.
+- No cambia pesos, motores, umbrales, Brier ni lógica Shadow.

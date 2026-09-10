@@ -178,12 +178,23 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         try {
             val now = System.currentTimeMillis()
             games.forEach { g ->
+                val existingScores = if(g.awayScore==null || g.homeScore==null){
+                    db.rawQuery(
+                        "SELECT away_score,home_score FROM games WHERE game_id=? LIMIT 1",
+                        arrayOf(g.gameId)
+                    ).use { c ->
+                        if(c.moveToFirst() && !c.isNull(0) && !c.isNull(1)) c.getInt(0) to c.getInt(1) else null
+                    }
+                } else null
+                val safeAwayScore=g.awayScore ?: existingScores?.first
+                val safeHomeScore=g.homeScore ?: existingScores?.second
+
                 val v = ContentValues().apply {
                     put("game_id", g.gameId); put("season", g.season); put("week", g.week)
                     put("game_type", g.gameType); put("game_day", g.gameDay); put("game_time", g.gameTime)
                     put("away_team", g.awayTeam); put("home_team", g.homeTeam)
-                    if (g.awayScore == null) putNull("away_score") else put("away_score", g.awayScore)
-                    if (g.homeScore == null) putNull("home_score") else put("home_score", g.homeScore)
+                    if (safeAwayScore == null) putNull("away_score") else put("away_score", safeAwayScore)
+                    if (safeHomeScore == null) putNull("home_score") else put("home_score", safeHomeScore)
                     if (g.totalLine == null) putNull("total_line") else put("total_line", g.totalLine)
                     if (g.spreadLine == null) putNull("spread_line") else put("spread_line", g.spreadLine)
                     put("roof", g.roof); put("surface", g.surface)

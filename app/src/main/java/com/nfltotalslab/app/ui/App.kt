@@ -85,7 +85,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.6.1 · VISUAL PACK",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.6.2 · VISUAL POLISH",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -259,7 +259,8 @@ private fun ScheduleScreen(
                 verticalArrangement=Arrangement.spacedBy(8.dp)
             ){
                 items(list,key={it.gameId}){g->
-                    val p=preds.firstOrNull{it.gameId==g.gameId}
+                    val gamePreds=preds.filter{it.gameId==g.gameId}
+                    val p=gamePreds.firstOrNull{it.analysisSource=="AUTO_CENSUS"} ?: gamePreds.firstOrNull()
                     val live=liveScores["${g.awayTeam}@${g.homeTeam}"]
                     GameCard(g,p,live){onAnalyze(g)}
                 }
@@ -337,13 +338,25 @@ private fun TeamLine(team:String,score:Int?){
         TeamBadge(team,30.dp)
         Spacer(Modifier.width(8.dp))
         Text(team,Modifier.weight(1f),fontWeight=FontWeight.Black,fontSize=17.sp)
-        Text(score?.toString() ?: "—",color=brand.primary,fontWeight=FontWeight.Black,fontSize=22.sp)
+        Surface(
+            color=brand.primary.copy(alpha=.14f),
+            shape=RoundedCornerShape(8.dp),
+            border=androidx.compose.foundation.BorderStroke(1.dp,brand.primary.copy(alpha=.45f))
+        ){
+            Text(
+                score?.toString() ?: "—",
+                Modifier.padding(horizontal=8.dp,vertical=2.dp),
+                color=Text,
+                fontWeight=FontWeight.Black,
+                fontSize=20.sp
+            )
+        }
     }
 }
 
 @Composable
 private fun RankingScreen(preds:List<Prediction>,onPick:(Prediction)->Unit){
-    val latest=preds.groupBy{it.gameId}.mapNotNull{it.value.maxByOrNull{p->p.createdAt}}.sortedByDescending{it.probability}
+    val latest=preds.groupBy{it.gameId}.mapNotNull{(_,rows)->rows.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt} ?: rows.maxByOrNull{it.createdAt}}.sortedByDescending{it.probability}
     Column(Modifier.fillMaxSize().padding(14.dp)){
         Text("RANKING",fontWeight=FontWeight.Black,fontSize=20.sp)
         Text("1 predicción vigente por partido · ordenada por probabilidad",color=Muted,fontSize=11.sp)
@@ -356,14 +369,32 @@ private fun RankingScreen(preds:List<Prediction>,onPick:(Prediction)->Unit){
 
 @Composable
 private fun PredictionRow(p:Prediction,onClick:()->Unit){
-    Surface(Modifier.fillMaxWidth().clickable{onClick()},color=Card,shape=RoundedCornerShape(14.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+    Surface(
+        Modifier.fillMaxWidth().clickable{onClick()},
+        color=Card,
+        shape=RoundedCornerShape(14.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
         Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){
+            Row(verticalAlignment=Alignment.CenterVertically){
+                TeamBadge(p.awayTeam,24.dp)
+                Spacer(Modifier.width(3.dp))
+                TeamBadge(p.homeTeam,24.dp)
+            }
+            Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)){
                 Text("${p.awayTeam} @ ${p.homeTeam}",fontWeight=FontWeight.Black)
-                Text("μ ${fmt(p.projection)} · W${p.week} · ${if(p.analysisSource=="AUTO_CENSUS")"AUTO" else "MANUAL"} · ${p.result ?: "PENDIENTE"}",color=Muted,fontSize=10.sp)
+                Text(
+                    "μ ${fmt(p.projection)} · W${p.week} · ${if(p.analysisSource=="AUTO_CENSUS")"AUTO" else "MANUAL"} · ${p.result ?: "PENDIENTE"}",
+                    color=Muted,fontSize=10.sp
+                )
             }
             Column(horizontalAlignment=Alignment.End){
-                Text("${p.pick} ${fmt(p.line)}",fontWeight=FontWeight.Black,color=if(p.classification.startsWith("JUGABLE"))Green else Text)
+                Text(
+                    "${p.pick} ${fmt(p.line)}",
+                    fontWeight=FontWeight.Black,
+                    color=if(p.classification.startsWith("JUGABLE"))Green else Text
+                )
                 Text("${(p.probability*100).format1()}% · ${p.classification}",color=Muted,fontSize=10.sp)
             }
         }
@@ -378,9 +409,16 @@ private fun TeamsScreen(metrics:List<TeamMetrics>){
         Spacer(Modifier.height(10.dp))
         LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){
             items(metrics.sortedBy{it.team}){m->
-                Surface(color=Card,shape=RoundedCornerShape(14.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
+                val brand=teamBrand(m.team)
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(14.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,brand.primary.copy(alpha=.35f))
+                ){
                     Column(Modifier.padding(12.dp)){
-                        Row{
+                        Row(verticalAlignment=Alignment.CenterVertically){
+                            TeamBadge(m.team,32.dp)
+                            Spacer(Modifier.width(9.dp))
                             Text(m.team,fontWeight=FontWeight.Black,fontSize=18.sp,modifier=Modifier.weight(1f))
                             Text("${m.games} GP",color=Muted,fontSize=11.sp)
                         }
@@ -413,7 +451,7 @@ private fun CensusScreen(preds:List<Prediction>,onBack:()->Unit){
 
 @Composable
 private fun CoreScreen(preds:List<Prediction>,onBack:()->Unit){
-    val latest=preds.groupBy{it.gameId}.mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}.sortedByDescending{it.createdAt}
+    val latest=preds.groupBy{it.gameId}.mapNotNull{(_,rows)->rows.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt} ?: rows.maxByOrNull{it.createdAt}}.sortedByDescending{it.createdAt}
     val autoSnapshots=preds.count{it.analysisSource=="AUTO_CENSUS"}
     val manualSnapshots=preds.count{it.analysisSource=="MANUAL"}
     val settled=latest.count{it.result=="WIN"||it.result=="LOSS"||it.result=="PUSH"}
@@ -532,6 +570,10 @@ private fun ShadowRow(x:ShadowPrediction){
         border=androidx.compose.foundation.BorderStroke(1.dp,Border)
     ){
         Row(Modifier.padding(11.dp),verticalAlignment=Alignment.CenterVertically){
+            TeamBadge(x.awayTeam,22.dp)
+            Spacer(Modifier.width(3.dp))
+            TeamBadge(x.homeTeam,22.dp)
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)){
                 Text("${x.awayTeam} @ ${x.homeTeam}",fontWeight=FontWeight.Black,fontSize=12.sp)
                 Text("${x.modelName} · W${x.week} · ${x.result ?: "PENDIENTE"}",color=Muted,fontSize=9.sp)
@@ -543,7 +585,6 @@ private fun ShadowRow(x:ShadowPrediction){
         }
     }
 }
-
 
 @Composable
 private fun BetsScreen(bets:List<BetRecord>,onBack:()->Unit){

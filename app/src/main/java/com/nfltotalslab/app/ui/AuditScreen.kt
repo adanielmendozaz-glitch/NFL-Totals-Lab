@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nfltotalslab.app.audit.AuditSnapshot
 import com.nfltotalslab.app.audit.AuditStat
+import com.nfltotalslab.app.branding.TeamBadge
+import com.nfltotalslab.app.branding.teamBrand
 import java.util.Locale
 
 @Composable
@@ -145,6 +147,10 @@ private fun AuditStatRow(x:AuditStat){
             Modifier.padding(11.dp),
             verticalAlignment=Alignment.CenterVertically
         ){
+            if(teamBrand(x.label).logoUrl!=null){
+                TeamBadge(x.label,24.dp)
+                Spacer(Modifier.width(8.dp))
+            }
             Column(Modifier.weight(1f)){
                 Text(x.label,fontWeight=FontWeight.Black,fontSize=11.sp)
                 Text(
