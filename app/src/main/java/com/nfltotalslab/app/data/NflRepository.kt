@@ -102,7 +102,7 @@ class NflRepository(
         val blocked=liveStates.values.filter{it.state!="pre"}.map{it.matchKey}.toSet()
 
         val auto=autoCensus(schedule,metrics,week,blocked)
-        val calibration=ensureCalibrationCensus(schedule,metrics,week,blocked)
+        val calibration=rollCalibration(schedule,week,blocked)
         val shadow=ensureShadowCensus(schedule,metrics,week,blocked)
 
         SyncSummary(
@@ -110,7 +110,7 @@ class NflRepository(
             pbpTeams=pbpTeams,
             rosterPlayers=rosterRows,
             injuryRows=injuryRows,
-            message="DEEP ✓ · $source · AUTO $auto · CAL $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
+            message="DEEP ✓ · $source · AUTO $auto · CAL↻ $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
             autoAnalyzed=auto,
             activeWeek=week
         )
@@ -124,6 +124,11 @@ class NflRepository(
             db.settlePredictions(updated)
             db.settleShadowPredictions(updated)
             db.settleCalibrationSnapshots(updated)
+
+            // Nuevo FINAL -> recalibra juegos posteriores todavía pregame.
+            // KickoffGuard impide modificar partidos ya iniciados.
+            rollCalibration(updated,week)
+
             settlePendingBets(db)
         }
         states
@@ -197,13 +202,103 @@ class NflRepository(
         count
     }
 
-    private suspend fun ensureCalibrationCensus(schedule:List<GameRecord>,metrics:List<TeamMetrics>,week:Int?,blocked:Set<String>):Int = withContext(Dispatchers.Default){
-        if(week==null)return@withContext 0
-        val metricMap=metrics.associateBy{it.team};val state=ProgressiveCalibrator.fit(db.loadPredictions());val cores=db.loadPredictions()
-        val candidates=schedule.filter{it.gameType=="REG"&&it.week==week&&!it.finished&&it.totalLine!=null&&!KickoffGuard.isLocked(it)&&"${it.awayTeam}@${it.homeTeam}" !in blocked}
+    /**
+     * Rolling Pregame Calibration:
+     * - Core RAW permanece intacto.
+     * - CAL puede actualizarse cuando aumenta la muestra de FINALs.
+     * - Después del kickoff no vuelve a modificarse.
+     * - Se conserva un snapshot efectivo por predictionId.
+     */
+    private fun rollCalibration(
+        schedule:List<GameRecord>,
+        week:Int?,
+        blocked:Set<String> = emptySet()
+    ):Int{
+        if(week==null)return 0
+
+        val predictions=db.loadPredictions()
+        val state=ProgressiveCalibrator.fit(predictions)
+
+        val cores=predictions
+            .filter{it.analysisSource=="AUTO_CENSUS"}
+            .groupBy{it.gameId}
+            .mapValues{(_,rows)->rows.maxByOrNull{it.createdAt}}
+
+        val existing=db.loadCalibrationSnapshots().associateBy{it.predictionId}
+
+        val candidates=schedule.filter{
+            it.gameType=="REG" &&
+            it.week==week &&
+            !it.finished &&
+            it.totalLine!=null &&
+            !KickoffGuard.isLocked(it) &&
+            "${it.awayTeam}@${it.homeTeam}" !in blocked
+        }
+
         var count=0
-        candidates.forEach{game->val key=inputKey(game,metricMap[game.awayTeam],metricMap[game.homeTeam]);val core=cores.firstOrNull{it.gameId==game.gameId&&it.analysisSource=="AUTO_CENSUS"&&it.inputKey==key}?:return@forEach;if(!db.hasCalibrationSnapshot(core.id)){db.saveCalibrationSnapshot(CalibrationSnapshot(core.id,core.id,core.gameId,core.season,core.week,core.awayTeam,core.homeTeam,core.line,core.pick,core.probability,state.calibrate(core.probability),state.intercept,state.slope,state.trainN,state.maturity,core.inputKey,System.currentTimeMillis()));count++}}
-        count
+
+        candidates.forEach{game->
+            val core=cores[game.gameId] ?: return@forEach
+            val old=existing[core.id]
+
+            val coefficientsChanged=old!=null && (
+                kotlin.math.abs(old.intercept-state.intercept)>1e-9 ||
+                kotlin.math.abs(old.slope-state.slope)>1e-9
+            )
+
+            val shouldRefresh=
+                old==null ||
+                (
+                    old.result==null &&
+                    (
+                        state.trainN>old.trainN ||
+                        coefficientsChanged
+                    )
+                )
+
+            if(shouldRefresh){
+                val now=System.currentTimeMillis()
+                val calibrated=state.calibrate(core.probability)
+
+                val snapshot=if(old==null){
+                    CalibrationSnapshot(
+                        id=core.id,
+                        predictionId=core.id,
+                        gameId=core.gameId,
+                        season=core.season,
+                        week=core.week,
+                        awayTeam=core.awayTeam,
+                        homeTeam=core.homeTeam,
+                        line=core.line,
+                        pick=core.pick,
+                        rawProbability=core.probability,
+                        calibratedProbability=calibrated,
+                        intercept=state.intercept,
+                        slope=state.slope,
+                        trainN=state.trainN,
+                        maturity=state.maturity,
+                        inputKey=core.inputKey,
+                        createdAt=now
+                    )
+                }else{
+                    old.copy(
+                        rawProbability=core.probability,
+                        calibratedProbability=calibrated,
+                        intercept=state.intercept,
+                        slope=state.slope,
+                        trainN=state.trainN,
+                        maturity=state.maturity,
+                        inputKey=core.inputKey,
+                        createdAt=now
+                    )
+                }
+
+                db.saveCalibrationSnapshot(snapshot)
+                count++
+            }
+        }
+
+        return count
     }
 
     private suspend fun ensureShadowCensus(

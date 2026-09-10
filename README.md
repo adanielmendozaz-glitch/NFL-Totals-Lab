@@ -147,3 +147,12 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Corrige la migración DB4 -> DB5.
 - Repara automáticamente calibration_snapshots al abrir si faltó.
 - No borra historial ni modifica Core/Shadow.
+
+## V0.7.2 · Rolling Pregame Calibration
+
+- CAL ya no queda clavado en la primera muestra disponible.
+- Mientras el partido siga pregame, nuevos FINALs pueden actualizar su probabilidad CAL.
+- Al kickoff, KickoffGuard congela definitivamente ese CAL.
+- LIVE FINAL recalibra automáticamente partidos posteriores de la misma jornada.
+- RAW Core nunca es reescrito por Calibration.
+- No hay nueva migración SQLite: se mantiene DB5.
