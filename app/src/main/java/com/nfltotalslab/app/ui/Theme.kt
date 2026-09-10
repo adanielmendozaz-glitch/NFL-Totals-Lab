@@ -1,6 +1,5 @@
 package com.nfltotalslab.app.ui
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -23,6 +22,6 @@ private val scheme=darkColorScheme(
 )
 
 @Composable
-fun NflTotalsTheme(content:@Composable()->Unit){
+fun NflTotalsTheme(content: @Composable () -> Unit){
     MaterialTheme(colorScheme=scheme,typography=Typography(),content=content)
 }
