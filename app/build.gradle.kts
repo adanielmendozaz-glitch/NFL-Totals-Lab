@@ -11,8 +11,35 @@ android {
         applicationId = "com.nfltotalslab.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.1"
+        versionCode = 6
+        versionName = "0.4.2"
+    }
+
+    val stableKeystorePath = System.getenv("NFL_KEYSTORE_PATH")
+    val stableStorePassword = System.getenv("NFL_STORE_PASSWORD")
+    val stableKeyAlias = System.getenv("NFL_KEY_ALIAS")
+    val stableKeyPassword = System.getenv("NFL_KEY_PASSWORD")
+
+    if (
+        !stableKeystorePath.isNullOrBlank() &&
+        !stableStorePassword.isNullOrBlank() &&
+        !stableKeyAlias.isNullOrBlank() &&
+        !stableKeyPassword.isNullOrBlank()
+    ) {
+        signingConfigs {
+            create("stableDev") {
+                storeFile = file(stableKeystorePath)
+                storePassword = stableStorePassword
+                keyAlias = stableKeyAlias
+                keyPassword = stableKeyPassword
+            }
+        }
+
+        buildTypes {
+            getByName("debug") {
+                signingConfig = signingConfigs.getByName("stableDev")
+            }
+        }
     }
 
     buildFeatures {

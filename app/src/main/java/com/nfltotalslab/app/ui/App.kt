@@ -80,7 +80,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.4.1 · FAST SYNC + LIVE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.4.2 · STABLE SIGN + LIVE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{

@@ -25,16 +25,22 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Stable debug signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: nfl-totals-lab-debug-keystore-v1
+      - name: Restore permanent signing keystore
+        env:
+          NFL_KEYSTORE_BASE64: ${{ secrets.NFL_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/nfl-signing"
+          printf '%s' "$NFL_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nfl-signing/nfl-totals-lab-dev.jks"
 
       - name: Build debug APK
+        env:
+          NFL_KEYSTORE_PATH: ${{ runner.temp }}/nfl-signing/nfl-totals-lab-dev.jks
+          NFL_STORE_PASSWORD: ${{ secrets.NFL_STORE_PASSWORD }}
+          NFL_KEY_ALIAS: ${{ secrets.NFL_KEY_ALIAS }}
+          NFL_KEY_PASSWORD: ${{ secrets.NFL_KEY_PASSWORD }}
         run: gradle :app:assembleDebug --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V0.4.1-debug
+          name: NFL-Totals-Lab-V0.4.2-stable-signed
           path: app/build/outputs/apk/debug/app-debug.apk

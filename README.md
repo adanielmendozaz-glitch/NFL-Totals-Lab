@@ -84,3 +84,11 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - LIVE refresca cada 60 segundos solo mientras está activado.
 - El marcador LIVE no modifica ni reentrena el pick pregame.
 - Si falla el feed LIVE, el Core y SQLite siguen funcionando.
+
+## V0.4.2 · Permanent Signing Baseline
+
+- La keystore privada ya no depende del runner ni de Actions cache.
+- La clave vive en GitHub Actions Secrets y en el backup privado de Termux.
+- El repositorio público no contiene la clave privada.
+- V0.4.2 es la línea base de firma para futuras actualizaciones.
+- Fast Sync, Live Tracker, Auto Census, Core y Brier permanecen intactos.
