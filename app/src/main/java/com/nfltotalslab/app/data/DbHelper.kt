@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 4) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE games(
@@ -98,6 +98,17 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_input ON shadow_predictions(game_id,model_name,input_key)")
 
         db.execSQL("""
+            CREATE TABLE calibration_snapshots(
+                id INTEGER PRIMARY KEY, prediction_id INTEGER NOT NULL, game_id TEXT NOT NULL,
+                season INTEGER NOT NULL, week INTEGER NOT NULL, away_team TEXT NOT NULL, home_team TEXT NOT NULL,
+                line REAL NOT NULL, pick TEXT NOT NULL, raw_probability REAL NOT NULL, calibrated_probability REAL NOT NULL,
+                intercept REAL NOT NULL, slope REAL NOT NULL, train_n INTEGER NOT NULL, maturity TEXT NOT NULL,
+                input_key TEXT NOT NULL, final_total INTEGER, result TEXT, created_at INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_cal_prediction ON calibration_snapshots(prediction_id)")
+
+        db.execSQL("""
             CREATE TABLE bets(
                 id INTEGER PRIMARY KEY,
                 prediction_id INTEGER NOT NULL,
@@ -169,6 +180,18 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             """.trimIndent())
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_game_model ON shadow_predictions(game_id,model_name,created_at)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_input ON shadow_predictions(game_id,model_name,input_key)")
+        if (oldVersion < 5) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS calibration_snapshots(
+                    id INTEGER PRIMARY KEY, prediction_id INTEGER NOT NULL, game_id TEXT NOT NULL,
+                    season INTEGER NOT NULL, week INTEGER NOT NULL, away_team TEXT NOT NULL, home_team TEXT NOT NULL,
+                    line REAL NOT NULL, pick TEXT NOT NULL, raw_probability REAL NOT NULL, calibrated_probability REAL NOT NULL,
+                    intercept REAL NOT NULL, slope REAL NOT NULL, train_n INTEGER NOT NULL, maturity TEXT NOT NULL,
+                    input_key TEXT NOT NULL, final_total INTEGER, result TEXT, created_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_cal_prediction ON calibration_snapshots(prediction_id)")
+        }
         }
     }
 
@@ -441,6 +464,18 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             db.setTransactionSuccessful()
         }finally{db.endTransaction()}
         return updated
+    }
+
+    fun saveCalibrationSnapshot(x:CalibrationSnapshot) {
+        val v=ContentValues().apply{put("id",x.id);put("prediction_id",x.predictionId);put("game_id",x.gameId);put("season",x.season);put("week",x.week);put("away_team",x.awayTeam);put("home_team",x.homeTeam);put("line",x.line);put("pick",x.pick);put("raw_probability",x.rawProbability);put("calibrated_probability",x.calibratedProbability);put("intercept",x.intercept);put("slope",x.slope);put("train_n",x.trainN);put("maturity",x.maturity);put("input_key",x.inputKey);put("created_at",x.createdAt);if(x.finalTotal==null)putNull("final_total")else put("final_total",x.finalTotal);put("result",x.result)}
+        writableDatabase.insertWithOnConflict("calibration_snapshots",null,v,SQLiteDatabase.CONFLICT_REPLACE)
+    }
+    fun hasCalibrationSnapshot(predictionId:Long):Boolean=readableDatabase.rawQuery("SELECT 1 FROM calibration_snapshots WHERE prediction_id=? LIMIT 1",arrayOf(predictionId.toString())).use{it.moveToFirst()}
+    fun loadCalibrationSnapshots():List<CalibrationSnapshot>{
+        val out=mutableListOf<CalibrationSnapshot>();readableDatabase.rawQuery("SELECT id,prediction_id,game_id,season,week,away_team,home_team,line,pick,raw_probability,calibrated_probability,intercept,slope,train_n,maturity,input_key,final_total,result,created_at FROM calibration_snapshots ORDER BY created_at DESC",null).use{c->while(c.moveToNext())out+=CalibrationSnapshot(c.getLong(0),c.getLong(1),c.getString(2),c.getInt(3),c.getInt(4),c.getString(5),c.getString(6),c.getDouble(7),c.getString(8),c.getDouble(9),c.getDouble(10),c.getDouble(11),c.getDouble(12),c.getInt(13),c.getString(14),c.getString(15),c.getLong(18),if(c.isNull(16))null else c.getInt(16),if(c.isNull(17))null else c.getString(17))};return out
+    }
+    fun settleCalibrationSnapshots(games:List<GameRecord>){
+        val finals=games.filter{it.finished}.associateBy{it.gameId};val w=writableDatabase;readableDatabase.rawQuery("SELECT id,game_id,line,pick FROM calibration_snapshots WHERE result IS NULL",null).use{c->while(c.moveToNext()){val id=c.getLong(0);val g=finals[c.getString(1)]?:continue;val line=c.getDouble(2);val pick=c.getString(3);val total=g.finalTotal?:continue;val result=when{total.toDouble()==line->"PUSH";pick=="OVER"&&total>line->"WIN";pick=="UNDER"&&total<line->"WIN";else->"LOSS"};val v=ContentValues().apply{put("final_total",total);put("result",result)};w.update("calibration_snapshots",v,"id=?",arrayOf(id.toString()))}}
     }
 
     fun saveBet(b: BetRecord) {

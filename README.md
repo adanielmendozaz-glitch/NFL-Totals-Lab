@@ -132,3 +132,12 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Marcadores con contraste alto; el color del equipo queda como acento.
 - Conserva un marcador FINAL capturado por LIVE aunque nflverse tarde en actualizar.
 - No cambia pesos, motores, umbrales, Brier ni lógica Shadow.
+
+## V0.7 · Progressive Calibration
+
+- Platt regularizado desde Week 1.
+- Snapshots CAL congelados pregame con solo FINALs previos.
+- RAW vs CAL Brier fuera de muestra.
+- Kickoff Lock local independiente de LIVE.
+- DB4 -> DB5 aditiva.
+- Core oficial no se altera automáticamente.

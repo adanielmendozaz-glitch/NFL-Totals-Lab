@@ -31,7 +31,7 @@ import java.util.*
 import kotlin.math.pow
 
 private enum class MainTab{JORNADA,RANKING,EQUIPOS,AJUSTES}
-private enum class SubTab{NONE,CENSO,CORE,SHADOW,AUDIT,APUESTAS,BANK,BRIER}
+private enum class SubTab{NONE,CENSO,CORE,SHADOW,AUDIT,APUESTAS,BANK,BRIER,CALIB}
 
 @Composable
 fun NflTotalsApp(context:Context){
@@ -44,6 +44,7 @@ fun NflTotalsApp(context:Context){
     var metrics by remember{mutableStateOf(repo.metrics(season))}
     var preds by remember{mutableStateOf(repo.predictions())}
     var shadows by remember{mutableStateOf(repo.shadows())}
+    var calibrations by remember{mutableStateOf(repo.calibrations())}
     var bets by remember{mutableStateOf(repo.bets())}
     var bank by remember{mutableStateOf(repo.bank())}
     var syncing by remember{mutableStateOf(false)}
@@ -54,7 +55,7 @@ fun NflTotalsApp(context:Context){
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
 
     fun refresh(){
-        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();bets=repo.bets();bank=repo.bank()
+        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();bets=repo.bets();bank=repo.bank()
     }
 
     LaunchedEffect(liveEnabled,season){
@@ -85,7 +86,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.6.2 · VISUAL POLISH",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.7 · PROGRESSIVE CAL",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -121,6 +122,7 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.APUESTAS->BetsScreen(bets){sub=SubTab.NONE}
                 sub==SubTab.BANK->BankScreen(bank,onAdd={repo.addBank(it,"Ajuste manual");refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
+                sub==SubTab.CALIB->ProgressiveCalibrationScreen(repo.calibrationState(),calibrations){sub=SubTab.NONE}
                 main==MainTab.JORNADA->ScheduleScreen(
                     games=games,preds=preds,syncing=syncing,
                     liveScores=liveScores,liveEnabled=liveEnabled,liveLoading=liveLoading,
@@ -151,7 +153,7 @@ fun NflTotalsApp(context:Context){
                     onAnalyze={g->
                         scope.launch{
                             syncMsg="Simulando ${g.awayTeam} @ ${g.homeTeam}…"
-                            val p=repo.analyze(g);selected=p;refresh();syncMsg="Análisis guardado en Censo + Ranking"
+                            runCatching{repo.analyze(g)}.onSuccess{p->selected=p;refresh();syncMsg="Análisis guardado en Censo + Ranking"}.onFailure{syncMsg=it.message ?: "Análisis bloqueado"}
                         }
                     }
                 )
@@ -186,6 +188,10 @@ private fun SubBar(onClick:(SubTab)->Unit){
             SubButton("🎟","Apuestas",Modifier.weight(1f)){onClick(SubTab.APUESTAS)}
             SubButton("▣","Bank",Modifier.weight(1f)){onClick(SubTab.BANK)}
             SubButton("⚗","Brier",Modifier.weight(1f)){onClick(SubTab.BRIER)}
+        }
+        Spacer(Modifier.height(5.dp))
+        Row(Modifier.fillMaxWidth()){
+            SubButton("≈","Calib",Modifier.fillMaxWidth()){onClick(SubTab.CALIB)}
         }
     }
 }

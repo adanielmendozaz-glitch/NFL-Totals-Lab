@@ -2,6 +2,8 @@ package com.nfltotalslab.app.data
 
 import com.nfltotalslab.app.model.ShadowLab
 import com.nfltotalslab.app.model.TotalsEngine
+import com.nfltotalslab.app.calibration.ProgressiveCalibrator
+import com.nfltotalslab.app.integrity.KickoffGuard
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -18,6 +20,7 @@ class NflRepository(
         db.upsertGames(schedule)
         db.settlePredictions(schedule)
         db.settleShadowPredictions(schedule)
+        db.settleCalibrationSnapshots(schedule)
         val settledBets=settlePendingBets(db)
         db.putKv("last_sync",System.currentTimeMillis().toString())
 
@@ -99,6 +102,7 @@ class NflRepository(
         val blocked=liveStates.values.filter{it.state!="pre"}.map{it.matchKey}.toSet()
 
         val auto=autoCensus(schedule,metrics,week,blocked)
+        val calibration=ensureCalibrationCensus(schedule,metrics,week,blocked)
         val shadow=ensureShadowCensus(schedule,metrics,week,blocked)
 
         SyncSummary(
@@ -106,7 +110,7 @@ class NflRepository(
             pbpTeams=pbpTeams,
             rosterPlayers=rosterRows,
             injuryRows=injuryRows,
-            message="DEEP ✓ · $source · AUTO $auto · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
+            message="DEEP ✓ · $source · AUTO $auto · CAL $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
             autoAnalyzed=auto,
             activeWeek=week
         )
@@ -119,6 +123,7 @@ class NflRepository(
             val updated=db.loadGames(season)
             db.settlePredictions(updated)
             db.settleShadowPredictions(updated)
+            db.settleCalibrationSnapshots(updated)
             settlePendingBets(db)
         }
         states
@@ -128,11 +133,14 @@ class NflRepository(
     fun metrics(season:Int)=db.loadMetrics(season)
     fun predictions()=db.loadPredictions()
     fun shadows()=db.loadShadowPredictions()
+    fun calibrations()=db.loadCalibrationSnapshots()
+    fun calibrationState()=ProgressiveCalibrator.fit(db.loadPredictions())
     fun bets()=db.loadBets()
     fun bank()=db.loadBank()
 
     suspend fun analyze(game:GameRecord):Prediction = withContext(Dispatchers.Default){
         require(!game.finished){"No se permite análisis postgame"}
+        require(!KickoffGuard.isLocked(game)){"KICKOFF LOCK: el partido ya alcanzó su hora oficial"}
         require(game.totalLine!=null){"El partido no tiene línea O/U disponible"}
         val m=db.loadMetrics(game.season).associateBy{it.team}
         val away=m[game.awayTeam]
@@ -167,6 +175,7 @@ class NflRepository(
             it.week==week &&
             !it.finished &&
             it.totalLine!=null &&
+            !KickoffGuard.isLocked(it) &&
             "${it.awayTeam}@${it.homeTeam}" !in blocked
         }
 
@@ -188,6 +197,15 @@ class NflRepository(
         count
     }
 
+    private suspend fun ensureCalibrationCensus(schedule:List<GameRecord>,metrics:List<TeamMetrics>,week:Int?,blocked:Set<String>):Int = withContext(Dispatchers.Default){
+        if(week==null)return@withContext 0
+        val metricMap=metrics.associateBy{it.team};val state=ProgressiveCalibrator.fit(db.loadPredictions());val cores=db.loadPredictions()
+        val candidates=schedule.filter{it.gameType=="REG"&&it.week==week&&!it.finished&&it.totalLine!=null&&!KickoffGuard.isLocked(it)&&"${it.awayTeam}@${it.homeTeam}" !in blocked}
+        var count=0
+        candidates.forEach{game->val key=inputKey(game,metricMap[game.awayTeam],metricMap[game.homeTeam]);val core=cores.firstOrNull{it.gameId==game.gameId&&it.analysisSource=="AUTO_CENSUS"&&it.inputKey==key}?:return@forEach;if(!db.hasCalibrationSnapshot(core.id)){db.saveCalibrationSnapshot(CalibrationSnapshot(core.id,core.id,core.gameId,core.season,core.week,core.awayTeam,core.homeTeam,core.line,core.pick,core.probability,state.calibrate(core.probability),state.intercept,state.slope,state.trainN,state.maturity,core.inputKey,System.currentTimeMillis()));count++}}
+        count
+    }
+
     private suspend fun ensureShadowCensus(
         schedule:List<GameRecord>,
         metrics:List<TeamMetrics>,
@@ -203,6 +221,7 @@ class NflRepository(
             it.week==week &&
             !it.finished &&
             it.totalLine!=null &&
+            !KickoffGuard.isLocked(it) &&
             "${it.awayTeam}@${it.homeTeam}" !in blocked
         }
 

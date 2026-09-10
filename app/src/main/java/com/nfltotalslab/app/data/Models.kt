@@ -88,6 +88,14 @@ data class ShadowPrediction(
     val result: String? = null
 )
 
+data class CalibrationSnapshot(
+    val id:Long, val predictionId:Long, val gameId:String, val season:Int, val week:Int,
+    val awayTeam:String, val homeTeam:String, val line:Double, val pick:String,
+    val rawProbability:Double, val calibratedProbability:Double, val intercept:Double, val slope:Double,
+    val trainN:Int, val maturity:String, val inputKey:String, val createdAt:Long,
+    val finalTotal:Int?=null, val result:String?=null
+)
+
 data class BetRecord(
     val id: Long = System.currentTimeMillis(),
     val predictionId: Long,
