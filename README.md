@@ -141,3 +141,9 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Kickoff Lock local independiente de LIVE.
 - DB4 -> DB5 aditiva.
 - Core oficial no se altera automáticamente.
+
+## V0.7.1 · Recovery Hotfix
+
+- Corrige la migración DB4 -> DB5.
+- Repara automáticamente calibration_snapshots al abrir si faltó.
+- No borra historial ni modifica Core/Shadow.

@@ -6,6 +6,40 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
 class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 5) {
+
+    private fun ensureCalibrationSchema(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS calibration_snapshots(
+                id INTEGER PRIMARY KEY,
+                prediction_id INTEGER NOT NULL,
+                game_id TEXT NOT NULL,
+                season INTEGER NOT NULL,
+                week INTEGER NOT NULL,
+                away_team TEXT NOT NULL,
+                home_team TEXT NOT NULL,
+                line REAL NOT NULL,
+                pick TEXT NOT NULL,
+                raw_probability REAL NOT NULL,
+                calibrated_probability REAL NOT NULL,
+                intercept REAL NOT NULL,
+                slope REAL NOT NULL,
+                train_n INTEGER NOT NULL,
+                maturity TEXT NOT NULL,
+                input_key TEXT NOT NULL,
+                final_total INTEGER,
+                result TEXT,
+                created_at INTEGER NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_cal_prediction ON calibration_snapshots(prediction_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_cal_game ON calibration_snapshots(game_id,created_at)")
+    }
+
+    override fun onOpen(db: SQLiteDatabase) {
+        super.onOpen(db)
+        ensureCalibrationSchema(db)
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""
             CREATE TABLE games(
@@ -180,6 +214,8 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             """.trimIndent())
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_game_model ON shadow_predictions(game_id,model_name,created_at)")
             db.execSQL("CREATE INDEX IF NOT EXISTS idx_shadow_input ON shadow_predictions(game_id,model_name,input_key)")
+        }
+
         if (oldVersion < 5) {
             db.execSQL("""
                 CREATE TABLE IF NOT EXISTS calibration_snapshots(
@@ -191,7 +227,6 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
                 )
             """.trimIndent())
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_cal_prediction ON calibration_snapshots(prediction_id)")
-        }
         }
     }
 
