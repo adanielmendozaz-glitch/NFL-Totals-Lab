@@ -21,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nfltotalslab.app.data.*
+import com.nfltotalslab.app.audit.AuditLab
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -28,7 +29,7 @@ import java.util.*
 import kotlin.math.pow
 
 private enum class MainTab{JORNADA,RANKING,EQUIPOS,AJUSTES}
-private enum class SubTab{NONE,CENSO,CORE,SHADOW,APUESTAS,BANK,BRIER}
+private enum class SubTab{NONE,CENSO,CORE,SHADOW,AUDIT,APUESTAS,BANK,BRIER}
 
 @Composable
 fun NflTotalsApp(context:Context){
@@ -54,7 +55,7 @@ fun NflTotalsApp(context:Context){
         games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();bets=repo.bets();bank=repo.bank()
     }
 
-    LaunchedEffect(liveEnabled,season,games){
+    LaunchedEffect(liveEnabled,season){
         if(!liveEnabled)return@LaunchedEffect
         while(liveEnabled){
             val activeWeek=games.firstOrNull{!it.finished && it.gameType=="REG"}?.week
@@ -64,6 +65,7 @@ fun NflTotalsApp(context:Context){
             val r=runCatching{repo.liveScores(season,activeWeek)}
             r.onSuccess{
                 liveScores=it
+                refresh()
                 val liveCount=it.values.count{x->x.isLive}
                 syncMsg=if(liveCount>0)"LIVE ✓ · $liveCount juego(s) en curso · refresco 60s" else "LIVE ✓ · sin juegos en curso"
             }.onFailure{
@@ -81,7 +83,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.5 · SHADOW + CALIBRATION",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.6 · AUDIT LAB",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -113,6 +115,7 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.CENSO->CensusScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
+                sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows)){sub=SubTab.NONE}
                 sub==SubTab.APUESTAS->BetsScreen(bets){sub=SubTab.NONE}
                 sub==SubTab.BANK->BankScreen(bank,onAdd={repo.addBank(it,"Ajuste manual");refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
@@ -170,10 +173,11 @@ fun NflTotalsApp(context:Context){
 @Composable
 private fun SubBar(onClick:(SubTab)->Unit){
     Column(Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=5.dp)){
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
             SubButton("▱","Censo",Modifier.weight(1f)){onClick(SubTab.CENSO)}
             SubButton("◉","Core",Modifier.weight(1f)){onClick(SubTab.CORE)}
             SubButton("◇","Shadow",Modifier.weight(1f)){onClick(SubTab.SHADOW)}
+            SubButton("⌁","Audit",Modifier.weight(1f)){onClick(SubTab.AUDIT)}
         }
         Spacer(Modifier.height(5.dp))
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
@@ -701,7 +705,7 @@ private fun SettingsScreen(season:Int,lastSync:Long?,onSeason:(Int)->Unit){
                 Text("Markov Drive 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Shadow Poisson 10%",fontSize=12.sp)
                 Spacer(Modifier.height(8.dp))
                 Text("100,000 simulaciones por motor · Shadow audita cada motor",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
-                Text("FINAL LIVE/SYNC → Core + Shadow + Brier automático",color=Muted,fontSize=10.sp)
+                Text("FINAL LIVE/SYNC → Core + Shadow + Brier + Audit automático",color=Muted,fontSize=10.sp)
                 Spacer(Modifier.height(12.dp))
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
                 Text("SQLite local protegido por sandbox de Android",fontWeight=FontWeight.Bold,fontSize=12.sp)

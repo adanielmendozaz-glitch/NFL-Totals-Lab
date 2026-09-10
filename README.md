@@ -104,3 +104,17 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Calibration añade rangos 50–54.9, 55–59.9, 60–64.9, 65–69.9 y 70%+.
 - Shadow Brier mide cada motor por separado.
 - SQLite DB3 -> DB4 es aditiva: conserva Censo, Core, Apuestas y Bank.
+
+## V0.6 · Audit Lab
+
+- ROI teórico a cuota decimal 1.91 y stake uniforme de 1u.
+- Hit rate, W-L-P, Brier y probabilidad media.
+- ECE (Expected Calibration Error) sobre buckets de probabilidad.
+- Auditoría 50–54.9%, 55–59.9%, 60–64.9%, 65–69.9% y 70%+.
+- Auditoría OVER vs UNDER.
+- Auditoría PASS / LEAN / JUGABLE.
+- Rendimiento del Core por equipo.
+- Comparación Core Ensemble vs cada motor Shadow.
+- Audit Lab es observacional: no altera pesos ni picks.
+- LIVE FINAL refresca inmediatamente Core, Shadow, Brier y Audit.
+- Sin migración de base de datos: conserva íntegro SQLite V0.5.
