@@ -86,7 +86,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.8 · OPP ADJ SHADOW",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.8.1 · BANK + BETS PRO",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -119,8 +119,8 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
                 sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows)){sub=SubTab.NONE}
-                sub==SubTab.APUESTAS->BetsScreen(bets){sub=SubTab.NONE}
-                sub==SubTab.BANK->BankScreen(bank,onAdd={repo.addBank(it,"Ajuste manual");refresh()},onBack={sub=SubTab.NONE})
+                sub==SubTab.APUESTAS->BetsScreen(bets,preds){sub=SubTab.NONE}
+                sub==SubTab.BANK->BankScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
                 sub==SubTab.CALIB->ProgressiveCalibrationScreen(repo.calibrationState(),calibrations){sub=SubTab.NONE}
                 main==MainTab.JORNADA->ScheduleScreen(
@@ -610,16 +610,220 @@ private fun ShadowRow(x:ShadowPrediction){
 }
 
 @Composable
-private fun BetsScreen(bets:List<BetRecord>,onBack:()->Unit){
-    Column{
-        SimpleHeader("APUESTAS","Control de picks seleccionados.",onBack)
-        LazyColumn(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-            items(bets){b->
-                Surface(color=Card,shape=RoundedCornerShape(14.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
-                    Row(Modifier.fillMaxWidth().padding(12.dp)){
-                        Column(Modifier.weight(1f)){Text(b.market,fontWeight=FontWeight.Black);Text(b.gameId,color=Muted,fontSize=9.sp)}
-                        Column(horizontalAlignment=Alignment.End){Text("$${b.stake.format2()}",fontWeight=FontWeight.Black);Text(b.status,color=Muted,fontSize=10.sp)}
+private fun BetsScreen(
+    bets:List<BetRecord>,
+    preds:List<Prediction>,
+    onBack:()->Unit
+){
+    var filter by remember{mutableStateOf("ALL")}
+    val predMap=preds.associateBy{it.id}
+    val pending=bets.filter{it.status=="PENDING"}
+    val settled=bets.filter{it.status!="PENDING"}
+    val wins=settled.count{it.status=="WIN"}
+    val losses=settled.count{it.status=="LOSS"}
+    val pushes=settled.count{it.status=="PUSH"}
+    val settledStake=settled.sumOf{it.stake}
+    val pnl=settled.sumOf{it.pnl}
+    val roi=if(settledStake>0.0)pnl/settledStake*100.0 else null
+    val hit=if(wins+losses>0)wins*100.0/(wins+losses) else null
+    val exposure=pending.sumOf{it.stake}
+
+    val visible=when(filter){
+        "PENDING"->pending
+        "WIN"->bets.filter{it.status=="WIN"}
+        "LOSS"->bets.filter{it.status=="LOSS"}
+        else->bets
+    }
+
+    Column(Modifier.fillMaxSize()){
+        SimpleHeader("APUESTAS PRO","Portfolio de picks · exposición y rendimiento.",onBack)
+
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal=14.dp),
+            verticalArrangement=Arrangement.spacedBy(8.dp)
+        ){
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(16.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                ){
+                    Column(Modifier.fillMaxWidth().padding(14.dp)){
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                            Column(Modifier.weight(1f)){
+                                Text("P&L REALIZADO",color=Muted,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                                Text(
+                                    "${if(pnl>=0) "+" else ""}$${pnl.format2()}",
+                                    color=if(pnl>=0)Green else Red,
+                                    fontSize=28.sp,
+                                    fontWeight=FontWeight.Black
+                                )
+                            }
+                            Column(horizontalAlignment=Alignment.End){
+                                Text("ROI",color=Muted,fontSize=9.sp)
+                                Text(
+                                    roi?.let{"${if(it>=0) "+" else ""}${it.format1()}%"} ?: "—",
+                                    color=when{
+                                        roi==null->Muted
+                                        roi>=0->Green
+                                        else->Red
+                                    },
+                                    fontWeight=FontWeight.Black,
+                                    fontSize=17.sp
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                            ProMetric("EXPOSICIÓN","$${exposure.format2()}",Modifier.weight(1f),Amber)
+                            ProMetric("HIT",hit?.let{"${it.format1()}%"} ?: "—",Modifier.weight(1f),Blue)
+                            ProMetric("W-L-P","$wins-$losses-$pushes",Modifier.weight(1f),Text)
+                        }
                     }
+                }
+            }
+
+            item{
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement=Arrangement.spacedBy(6.dp)
+                ){
+                    listOf("ALL","PENDING","WIN","LOSS").forEach{f->
+                        FilterPill(
+                            label=when(f){
+                                "ALL"->"TODAS"
+                                "PENDING"->"ABIERTAS"
+                                "WIN"->"WIN"
+                                else->"LOSS"
+                            },
+                            selected=filter==f,
+                            modifier=Modifier.weight(1f)
+                        ){filter=f}
+                    }
+                }
+            }
+
+            if(visible.isEmpty()){
+                item{
+                    Surface(
+                        color=Card,
+                        shape=RoundedCornerShape(14.dp),
+                        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                    ){
+                        Text(
+                            "No hay apuestas en este filtro.",
+                            Modifier.fillMaxWidth().padding(22.dp),
+                            color=Muted,
+                            textAlign=TextAlign.Center
+                        )
+                    }
+                }
+            }else{
+                items(visible,key={it.id}){b->
+                    ProBetCard(b,predMap[b.predictionId])
+                }
+            }
+
+            item{Spacer(Modifier.height(10.dp))}
+        }
+    }
+}
+
+@Composable
+private fun ProBetCard(b:BetRecord,p:Prediction?){
+    val statusColor=when(b.status){
+        "WIN"->Green
+        "LOSS"->Red
+        "PUSH"->Amber
+        else->Blue
+    }
+
+    val potentialProfit=b.stake*(b.odds-1.0)
+    val potentialReturn=b.stake*b.odds
+
+    Surface(
+        Modifier.fillMaxWidth(),
+        color=Card,
+        shape=RoundedCornerShape(15.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,statusColor.copy(alpha=.55f))
+    ){
+        Column(Modifier.padding(12.dp)){
+            Row(verticalAlignment=Alignment.CenterVertically){
+                if(p!=null){
+                    TeamBadge(p.awayTeam,24.dp)
+                    Spacer(Modifier.width(3.dp))
+                    TeamBadge(p.homeTeam,24.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+
+                Column(Modifier.weight(1f)){
+                    Text(
+                        p?.let{"${it.awayTeam} @ ${it.homeTeam}"} ?: b.gameId,
+                        fontWeight=FontWeight.Black,
+                        fontSize=12.sp
+                    )
+                    Text(formatDateTime(b.createdAt),color=Muted,fontSize=8.sp)
+                }
+
+                Surface(
+                    color=statusColor.copy(alpha=.12f),
+                    shape=RoundedCornerShape(20.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,statusColor.copy(alpha=.50f))
+                ){
+                    Text(
+                        if(b.status=="PENDING")"ABIERTA" else b.status,
+                        Modifier.padding(horizontal=8.dp,vertical=4.dp),
+                        color=statusColor,
+                        fontWeight=FontWeight.Black,
+                        fontSize=8.sp
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Column(Modifier.weight(1f)){
+                    Text(b.market,fontWeight=FontWeight.Black,fontSize=18.sp)
+                    if(p!=null){
+                        Text(
+                            "${(p.probability*100).format1()}% · ${p.classification} · μ ${fmt(p.projection)}",
+                            color=Muted,
+                            fontSize=9.sp
+                        )
+                    }
+                }
+                Column(horizontalAlignment=Alignment.End){
+                    Text("@ ${b.odds.format2()}",fontWeight=FontWeight.Black,fontSize=12.sp)
+                    Text("Stake $${b.stake.format2()}",color=Muted,fontSize=9.sp)
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical=9.dp),color=Border)
+
+            Row(Modifier.fillMaxWidth()){
+                Column(Modifier.weight(1f)){
+                    Text("BENEFICIO POT.",color=Muted,fontSize=8.sp)
+                    Text("+$${potentialProfit.format2()}",fontWeight=FontWeight.Bold,fontSize=11.sp)
+                }
+                Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){
+                    Text("RETORNO POT.",color=Muted,fontSize=8.sp)
+                    Text("$${potentialReturn.format2()}",fontWeight=FontWeight.Bold,fontSize=11.sp)
+                }
+                Column(Modifier.weight(1f),horizontalAlignment=Alignment.End){
+                    Text("P&L",color=Muted,fontSize=8.sp)
+                    Text(
+                        if(b.status=="PENDING")"—" else "${if(b.pnl>=0) "+" else ""}$${b.pnl.format2()}",
+                        color=when{
+                            b.status=="PENDING"->Muted
+                            b.pnl>=0->Green
+                            else->Red
+                        },
+                        fontWeight=FontWeight.Black,
+                        fontSize=11.sp
+                    )
                 }
             }
         }
@@ -627,21 +831,244 @@ private fun BetsScreen(bets:List<BetRecord>,onBack:()->Unit){
 }
 
 @Composable
-private fun BankScreen(entries:List<BankEntry>,onAdd:(Double)->Unit,onBack:()->Unit){
+private fun FilterPill(
+    label:String,
+    selected:Boolean,
+    modifier:Modifier=Modifier,
+    onClick:()->Unit
+){
+    Surface(
+        modifier=modifier.clickable{onClick()},
+        color=if(selected)Green.copy(alpha=.16f) else Card,
+        shape=RoundedCornerShape(20.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,if(selected)Green else Border)
+    ){
+        Text(
+            label,
+            Modifier.padding(vertical=7.dp),
+            textAlign=TextAlign.Center,
+            color=if(selected)Green else Muted,
+            fontWeight=FontWeight.Black,
+            fontSize=8.sp
+        )
+    }
+}
+
+@Composable
+private fun ProMetric(
+    label:String,
+    value:String,
+    modifier:Modifier=Modifier,
+    valueColor:Color=Text
+){
+    Surface(
+        modifier=modifier,
+        color=Panel,
+        shape=RoundedCornerShape(11.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
+        Column(
+            Modifier.padding(vertical=9.dp),
+            horizontalAlignment=Alignment.CenterHorizontally
+        ){
+            Text(label,color=Muted,fontSize=7.sp,fontWeight=FontWeight.Bold)
+            Text(value,color=valueColor,fontSize=12.sp,fontWeight=FontWeight.Black)
+        }
+    }
+}
+
+private fun formatDateTime(ms:Long):String =
+    SimpleDateFormat("dd MMM · HH:mm",Locale.getDefault()).format(Date(ms))
+
+@Composable
+private fun BankScreen(
+    entries:List<BankEntry>,
+    bets:List<BetRecord>,
+    onAdd:(Double,String)->Unit,
+    onBack:()->Unit
+){
     var amount by remember{mutableStateOf("")}
+    var note by remember{mutableStateOf("")}
+
     val total=entries.sumOf{it.amount}
-    Column{
-        SimpleHeader("BANK","Registro local SQLite.",onBack)
-        Column(Modifier.padding(14.dp)){
-            Surface(color=Card,shape=RoundedCornerShape(16.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
-                Column(Modifier.fillMaxWidth().padding(16.dp)){
-                    Text("BANK ACTUAL",color=Muted,fontSize=10.sp)
-                    Text("$${total.format2()}",fontWeight=FontWeight.Black,fontSize=30.sp,color=Green)
+    val deposits=entries.filter{it.amount>0}.sumOf{it.amount}
+    val withdrawals=-entries.filter{it.amount<0}.sumOf{it.amount}
+    val pendingExposure=bets.filter{it.status=="PENDING"}.sumOf{it.stake}
+    val realizedPnl=bets.filter{it.status!="PENDING"}.sumOf{it.pnl}
+
+    Column(Modifier.fillMaxSize()){
+        SimpleHeader("BANK PRO","Gestión de banca · capital, exposición y movimientos.",onBack)
+
+        LazyColumn(
+            Modifier.fillMaxSize().padding(horizontal=14.dp),
+            verticalArrangement=Arrangement.spacedBy(8.dp)
+        ){
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(18.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Green.copy(alpha=.55f))
+                ){
+                    Column(Modifier.fillMaxWidth().padding(16.dp)){
+                        Text("BANK ACTUAL",color=Muted,fontSize=9.sp,fontWeight=FontWeight.Bold)
+                        Text("$${total.format2()}",fontWeight=FontWeight.Black,fontSize=32.sp,color=Green)
+                        Text("${entries.size} movimiento(s) registrados",color=Muted,fontSize=9.sp)
+                    }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value=amount,onValueChange={amount=it},label={Text("Ajuste + / -")},modifier=Modifier.fillMaxWidth())
-            Button(onClick={amount.toDoubleOrNull()?.let{onAdd(it);amount=""}},modifier=Modifier.fillMaxWidth().padding(top=8.dp)){Text("Guardar movimiento")}
+
+            item{
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                    ProMetric("ENTRADAS","$${deposits.format2()}",Modifier.weight(1f),Green)
+                    ProMetric("RETIROS","$${withdrawals.format2()}",Modifier.weight(1f),Red)
+                    ProMetric("EXPOSICIÓN","$${pendingExposure.format2()}",Modifier.weight(1f),Amber)
+                }
+                Spacer(Modifier.height(7.dp))
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                    ProMetric(
+                        "P&L APUESTAS",
+                        "${if(realizedPnl>=0) "+" else ""}$${realizedPnl.format2()}",
+                        Modifier.weight(1f),
+                        if(realizedPnl>=0)Green else Red
+                    )
+                    ProMetric("MOVIMIENTOS",entries.size.toString(),Modifier.weight(1f),Blue)
+                }
+            }
+
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(15.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                ){
+                    Column(Modifier.padding(13.dp)){
+                        Text("NUEVO MOVIMIENTO",fontSize=10.sp,fontWeight=FontWeight.Black)
+                        Text("Positivo = depósito · negativo = retiro.",color=Muted,fontSize=8.sp)
+
+                        Spacer(Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value=amount,
+                            onValueChange={amount=it},
+                            label={Text("Monto + / -")},
+                            modifier=Modifier.fillMaxWidth(),
+                            singleLine=true
+                        )
+
+                        Spacer(Modifier.height(6.dp))
+
+                        OutlinedTextField(
+                            value=note,
+                            onValueChange={note=it},
+                            label={Text("Concepto / nota")},
+                            modifier=Modifier.fillMaxWidth(),
+                            singleLine=true
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement=Arrangement.spacedBy(6.dp)
+                        ){
+                            listOf(100,250,500).forEach{v->
+                                OutlinedButton(
+                                    onClick={amount=v.toString()},
+                                    modifier=Modifier.weight(1f)
+                                ){
+                                    Text("+$v",fontSize=9.sp)
+                                }
+                            }
+                        }
+
+                        Button(
+                            onClick={
+                                val value=amount.toDoubleOrNull()
+                                if(value!=null && value!=0.0){
+                                    onAdd(value,note.ifBlank{"Ajuste manual"})
+                                    amount=""
+                                    note=""
+                                }
+                            },
+                            modifier=Modifier.fillMaxWidth().padding(top=8.dp),
+                            colors=ButtonDefaults.buttonColors(containerColor=Green)
+                        ){
+                            Text("GUARDAR MOVIMIENTO",fontWeight=FontWeight.Black,fontSize=10.sp)
+                        }
+                    }
+                }
+            }
+
+            item{
+                Text("HISTORIAL DE MOVIMIENTOS",color=Muted,fontSize=9.sp,fontWeight=FontWeight.Black)
+            }
+
+            if(entries.isEmpty()){
+                item{
+                    Surface(
+                        color=Card,
+                        shape=RoundedCornerShape(14.dp),
+                        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                    ){
+                        Text(
+                            "Aún no hay movimientos de banca.",
+                            Modifier.fillMaxWidth().padding(20.dp),
+                            textAlign=TextAlign.Center,
+                            color=Muted
+                        )
+                    }
+                }
+            }else{
+                items(entries,key={it.id}){e->
+                    val positive=e.amount>=0
+                    Surface(
+                        color=Card,
+                        shape=RoundedCornerShape(13.dp),
+                        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                    ){
+                        Row(
+                            Modifier.fillMaxWidth().padding(11.dp),
+                            verticalAlignment=Alignment.CenterVertically
+                        ){
+                            Surface(
+                                color=(if(positive)Green else Red).copy(alpha=.12f),
+                                shape=RoundedCornerShape(10.dp)
+                            ){
+                                Text(
+                                    if(positive)"＋" else "－",
+                                    Modifier.padding(horizontal=9.dp,vertical=6.dp),
+                                    color=if(positive)Green else Red,
+                                    fontWeight=FontWeight.Black
+                                )
+                            }
+
+                            Spacer(Modifier.width(9.dp))
+
+                            Column(Modifier.weight(1f)){
+                                Text(e.note.ifBlank{"Movimiento"},fontWeight=FontWeight.Bold,fontSize=11.sp)
+                                Text(formatDateTime(e.createdAt),color=Muted,fontSize=8.sp)
+                            }
+
+                            Text(
+                                "${if(positive) "+" else ""}$${e.amount.format2()}",
+                                color=if(positive)Green else Red,
+                                fontWeight=FontWeight.Black,
+                                fontSize=13.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            item{
+                Text(
+                    "Bank y P&L se muestran por separado para evitar doble conteo. " +
+                    "La banca refleja únicamente movimientos registrados; las apuestas conservan su P&L propio.",
+                    color=Muted,
+                    fontSize=8.sp,
+                    modifier=Modifier.padding(vertical=8.dp)
+                )
+            }
         }
     }
 }

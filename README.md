@@ -165,3 +165,13 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Peso progresivo: 1 juego ≈16.7%, 3 ≈50%, 6+ = 100%.
 - No genera OppAdj si alguno de los dos equipos no tiene historial.
 - Audit/Brier incorporan automáticamente los nuevos modelos Shadow.
+
+## V0.8.1 · Bank + Bets Pro
+
+- Apuestas: P&L, ROI, exposición abierta, Hit Rate y W-L-P.
+- Filtros TODAS / ABIERTAS / WIN / LOSS.
+- Tarjetas con logos, matchup, probabilidad Core, clasificación, cuota, stake y retorno potencial.
+- Bank: banca actual, entradas, retiros, exposición pendiente y P&L de apuestas.
+- Historial de movimientos con fecha y nota.
+- Bank y P&L se mantienen separados para evitar doble conteo.
+- No hay migración SQLite ni cambios al Core/Shadow/Calibration.

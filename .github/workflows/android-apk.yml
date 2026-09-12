@@ -42,5 +42,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V0.8-Opponent-Adjustment-Shadow
+          name: NFL-Totals-Lab-V0.8.1-Bank-Bets-Pro
           path: app/build/outputs/apk/debug/app-debug.apk
