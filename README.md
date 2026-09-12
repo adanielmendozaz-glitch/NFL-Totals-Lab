@@ -156,3 +156,12 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - LIVE FINAL recalibra automáticamente partidos posteriores de la misma jornada.
 - RAW Core nunca es reescrito por Calibration.
 - No hay nueva migración SQLite: se mantiene DB5.
+
+## V0.8 · Opponent Adjustment Shadow
+
+- Añade OppAdj EPA, OppAdj Tempo y OppAdj Composite.
+- Reutiliza shadow_predictions; no hay migración SQLite nueva.
+- Core RAW, pesos y Rolling Calibration permanecen intactos.
+- Peso progresivo: 1 juego ≈16.7%, 3 ≈50%, 6+ = 100%.
+- No genera OppAdj si alguno de los dos equipos no tiene historial.
+- Audit/Brier incorporan automáticamente los nuevos modelos Shadow.

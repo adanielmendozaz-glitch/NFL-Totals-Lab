@@ -1,6 +1,7 @@
 package com.nfltotalslab.app.data
 
 import com.nfltotalslab.app.model.ShadowLab
+import com.nfltotalslab.app.model.OpponentAdjustmentShadow
 import com.nfltotalslab.app.model.TotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
@@ -330,6 +331,19 @@ class NflRepository(
             } ?: return@forEach
 
             ShadowLab.fromCore(core).forEach{x->
+                if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
+                    db.saveShadowPrediction(x)
+                    count++
+                }
+            }
+
+            OpponentAdjustmentShadow.fromCore(
+                game=game,
+                core=core,
+                metrics=metrics,
+                schedule=schedule,
+                engine=engine
+            ).forEach{x->
                 if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
                     db.saveShadowPrediction(x)
                     count++

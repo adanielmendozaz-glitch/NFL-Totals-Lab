@@ -86,7 +86,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.7.2 · ROLLING CAL",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.8 · OPP ADJ SHADOW",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -508,7 +508,7 @@ private fun ShadowScreen(shadows:List<ShadowPrediction>,onBack:()->Unit){
     Column(Modifier.fillMaxSize()){
         SimpleHeader(
             "SHADOW LAB",
-            "Motores individuales congelados pregame · nunca modifican el Core.",
+            "5 componentes + OppAdj EPA / Tempo / Composite · observación pregame.",
             onBack
         )
 
@@ -551,6 +551,23 @@ private fun ShadowScreen(shadows:List<ShadowPrediction>,onBack:()->Unit){
                                 )
                             }
                         }
+                    }
+                }
+
+                item{
+                    Surface(
+                        color=Panel,
+                        shape=RoundedCornerShape(12.dp),
+                        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                    ){
+                        Text(
+                            "OPP ADJ gana peso gradualmente con el historial. " +
+                            "1 juego previo ≈17%; 3 ≈50%; 6+ = 100%. " +
+                            "No se genera sin historial de ambos equipos.",
+                            Modifier.padding(10.dp),
+                            color=Muted,
+                            fontSize=9.sp
+                        )
                     }
                 }
 
