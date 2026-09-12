@@ -175,3 +175,14 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Historial de movimientos con fecha y nota.
 - Bank y P&L se mantienen separados para evitar doble conteo.
 - No hay migración SQLite ni cambios al Core/Shadow/Calibration.
+
+## V0.8.2 · Portfolio Pro
+
+- Apuestas y Bank rediseñados con el lenguaje visual denso de MLB Labs.
+- Bank: estado del bankroll, saldo, disponible, comprometido, exposición, P&L, ROI, 7 días, mes y récord.
+- Curva del bankroll, movimientos de capital y rendimiento diario.
+- Apuestas: resumen de portfolio, disciplina del modelo y ledger compacto.
+- Disciplina: sigue modelo, Lean, Pass y contra modelo.
+- Tickets: momio decimal/americano, stake, unidades, riesgo, exposición, probabilidad, Brier, estado y utilidad.
+- CLV se mantiene en — hasta disponer de closing line real.
+- Sin migración SQLite ni cambios a Core, Shadow, OppAdj o Calibration.

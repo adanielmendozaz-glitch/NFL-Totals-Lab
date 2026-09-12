@@ -86,7 +86,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.8.1 · BANK + BETS PRO",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.8.2 · PORTFOLIO PRO",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -119,8 +119,8 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
                 sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows)){sub=SubTab.NONE}
-                sub==SubTab.APUESTAS->BetsScreen(bets,preds){sub=SubTab.NONE}
-                sub==SubTab.BANK->BankScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
+                sub==SubTab.APUESTAS->BetsPortfolioScreen(bets,preds,bank){sub=SubTab.NONE}
+                sub==SubTab.BANK->BankPortfolioScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
                 sub==SubTab.CALIB->ProgressiveCalibrationScreen(repo.calibrationState(),calibrations){sub=SubTab.NONE}
                 main==MainTab.JORNADA->ScheduleScreen(

@@ -42,5 +42,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V0.8.1-Bank-Bets-Pro
+          name: NFL-Totals-Lab-V0.8.2-Portfolio-Pro
           path: app/build/outputs/apk/debug/app-debug.apk
