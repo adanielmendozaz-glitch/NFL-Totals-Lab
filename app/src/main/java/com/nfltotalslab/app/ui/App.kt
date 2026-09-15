@@ -86,7 +86,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.8.2 · PORTFOLIO PRO",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.8.3 · WEEK RANKING",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -157,7 +157,7 @@ fun NflTotalsApp(context:Context){
                         }
                     }
                 )
-                main==MainTab.RANKING->RankingScreen(preds){selected=it}
+                main==MainTab.RANKING->RankingScreen(preds,games){selected=it}
                 main==MainTab.EQUIPOS->TeamsScreen(metrics)
                 main==MainTab.AJUSTES->SettingsScreen(season,repo.lastSync(),onSeason={season=it;refresh()})
             }
@@ -361,14 +361,58 @@ private fun TeamLine(team:String,score:Int?){
 }
 
 @Composable
-private fun RankingScreen(preds:List<Prediction>,onPick:(Prediction)->Unit){
-    val latest=preds.groupBy{it.gameId}.mapNotNull{(_,rows)->rows.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt} ?: rows.maxByOrNull{it.createdAt}}.sortedByDescending{it.probability}
+private fun RankingScreen(
+    preds:List<Prediction>,
+    games:List<GameRecord>,
+    onPick:(Prediction)->Unit
+){
+    val regularGames=games.filter{it.gameType=="REG"}
+    val activeWeek=regularGames.filter{!it.finished}.minOfOrNull{it.week}
+
+    val activeGameIds=if(activeWeek==null) emptySet() else
+        regularGames.filter{it.week==activeWeek && !it.finished}.map{it.gameId}.toSet()
+
+    val latest=if(activeWeek==null){
+        emptyList()
+    }else{
+        preds
+            .filter{it.week==activeWeek && it.gameId in activeGameIds && it.result==null}
+            .groupBy{it.gameId}
+            .mapNotNull{(_,rows)->
+                rows.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt}
+                    ?: rows.maxByOrNull{it.createdAt}
+            }
+            .sortedWith(
+                compareByDescending<Prediction>{
+                    when{
+                        it.classification.startsWith("JUGABLE")->3
+                        it.classification.startsWith("LEAN")->2
+                        else->1
+                    }
+                }.thenByDescending{it.probability}
+            )
+    }
+
     Column(Modifier.fillMaxSize().padding(14.dp)){
-        Text("RANKING",fontWeight=FontWeight.Black,fontSize=20.sp)
-        Text("1 predicción vigente por partido · ordenada por probabilidad",color=Muted,fontSize=11.sp)
+        Text(activeWeek?.let{"RANKING · WEEK $it"} ?: "RANKING",fontWeight=FontWeight.Black,fontSize=20.sp)
+        Text(
+            when{
+                activeWeek==null -> "Temporada regular sin partidos pendientes."
+                latest.isEmpty() -> "Semana activa · aún sin predicciones vigentes. Pulsa SINCRONIZAR."
+                else -> "${latest.size} partido(s) pendientes · sólo Week $activeWeek · JUGABLE → LEAN → PASS"
+            },
+            color=Muted,fontSize=11.sp
+        )
         Spacer(Modifier.height(10.dp))
-        LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){
-            items(latest){p->PredictionRow(p){onPick(p)}}
+
+        if(activeWeek==null){
+            EmptyState("No hay una nueva jornada pendiente.")
+        }else if(latest.isEmpty()){
+            EmptyState("WEEK $activeWeek sin ranking vigente.\nPulsa SINCRONIZAR para generar el ranking.")
+        }else{
+            LazyColumn(verticalArrangement=Arrangement.spacedBy(8.dp)){
+                items(latest,key={it.gameId}){p->PredictionRow(p){onPick(p)}}
+            }
         }
     }
 }

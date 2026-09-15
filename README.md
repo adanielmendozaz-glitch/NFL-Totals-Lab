@@ -186,3 +186,11 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Tickets: momio decimal/americano, stake, unidades, riesgo, exposición, probabilidad, Brier, estado y utilidad.
 - CLV se mantiene en — hasta disponer de closing line real.
 - Sin migración SQLite ni cambios a Core, Shadow, OppAdj o Calibration.
+
+## V0.8.3 · Active Week Ranking
+
+- Ranking muestra exclusivamente la semana activa.
+- Partidos finalizados desaparecen del Ranking.
+- Al terminar la semana completa, la siguiente semana pendiente toma su lugar automáticamente.
+- Censo/Audit/Brier conservan el histórico completo.
+- Sin migración SQLite ni cambios de Core/Shadow/Calibration.
