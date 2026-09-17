@@ -86,7 +86,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.8.3 · WEEK RANKING",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.8.4 · CORE RECORD",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -501,28 +501,278 @@ private fun CensusScreen(preds:List<Prediction>,onBack:()->Unit){
 
 @Composable
 private fun CoreScreen(preds:List<Prediction>,onBack:()->Unit){
-    val latest=preds.groupBy{it.gameId}.mapNotNull{(_,rows)->rows.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt} ?: rows.maxByOrNull{it.createdAt}}.sortedByDescending{it.createdAt}
-    val autoSnapshots=preds.count{it.analysisSource=="AUTO_CENSUS"}
-    val manualSnapshots=preds.count{it.analysisSource=="MANUAL"}
-    val settled=latest.count{it.result=="WIN"||it.result=="LOSS"||it.result=="PUSH"}
+    val official=preds
+        .filter{it.analysisSource=="AUTO_CENSUS"}
+        .groupBy{it.gameId}
+        .mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}
+        .sortedByDescending{it.createdAt}
+
+    val settled=official.filter{it.result=="WIN"||it.result=="LOSS"||it.result=="PUSH"}
+    val pending=official.count{it.result==null}
+    val totalStats=coreRecordStats(settled)
+
+    val byWeek=settled.groupBy{it.week}.toSortedMap()
+
+    val jugable=coreRecordStats(settled.filter{it.classification.startsWith("JUGABLE")})
+    val lean=coreRecordStats(settled.filter{it.classification.startsWith("LEAN")})
+    val pass=coreRecordStats(settled.filter{it.classification.startsWith("PASS")})
+
+    val overs=coreRecordStats(settled.filter{it.pick=="OVER"})
+    val unders=coreRecordStats(settled.filter{it.pick=="UNDER"})
 
     Column(Modifier.fillMaxSize()){
-        SimpleHeader("CORE","1 registro vigente por juego · dataset de observación, sin tocar pesos.",onBack)
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal=14.dp),
-            horizontalArrangement=Arrangement.spacedBy(8.dp)
-        ){
-            CoreStat("JUEGOS",latest.size.toString(),Modifier.weight(1f))
-            CoreStat("AUTO",autoSnapshots.toString(),Modifier.weight(1f))
-            CoreStat("MANUAL",manualSnapshots.toString(),Modifier.weight(1f))
-            CoreStat("FINAL",settled.toString(),Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(10.dp))
+        SimpleHeader(
+            "CORE RECORD",
+            "Registro general oficial · 1 AUTO por juego · manuales fuera del récord.",
+            onBack
+        )
+
         LazyColumn(
-            Modifier.weight(1f).padding(horizontal=14.dp),
+            Modifier.fillMaxSize().padding(horizontal=14.dp),
             verticalArrangement=Arrangement.spacedBy(8.dp)
         ){
-            items(latest){p->PredictionRow(p){}}
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(16.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                ){
+                    Column(Modifier.fillMaxWidth().padding(14.dp)){
+                        Text("REGISTRO GENERAL · TEMPORADA",color=Muted,fontSize=9.sp,fontWeight=FontWeight.Black)
+                        Text(
+                            "${totalStats.wins}-${totalStats.losses}-${totalStats.pushes}",
+                            color=Text,
+                            fontSize=31.sp,
+                            fontWeight=FontWeight.Black
+                        )
+                        Text("W - L - P",color=Muted,fontSize=9.sp)
+
+                        Spacer(Modifier.height(10.dp))
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement=Arrangement.spacedBy(7.dp)
+                        ){
+                            CoreRecordMetric(
+                                "ACIERTO",
+                                totalStats.hit?.let{"${it.format1()}%"} ?: "—",
+                                Modifier.weight(1f),
+                                Green
+                            )
+                            CoreRecordMetric(
+                                "BRIER",
+                                totalStats.brier?.format3() ?: "—",
+                                Modifier.weight(1f),
+                                Blue
+                            )
+                            CoreRecordMetric(
+                                "PEND.",
+                                pending.toString(),
+                                Modifier.weight(1f),
+                                Amber
+                            )
+                        }
+
+                        Spacer(Modifier.height(7.dp))
+
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement=Arrangement.spacedBy(7.dp)
+                        ){
+                            CoreRecordMetric("OFICIALES",official.size.toString(),Modifier.weight(1f),Text)
+                            CoreRecordMetric("RESUELTOS",settled.size.toString(),Modifier.weight(1f),Text)
+                            CoreRecordMetric("DECISIONES",(totalStats.wins+totalStats.losses).toString(),Modifier.weight(1f),Text)
+                        }
+                    }
+                }
+            }
+
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(16.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                ){
+                    Column(Modifier.fillMaxWidth().padding(12.dp)){
+                        Text("RENDIMIENTO POR SEMANA",fontWeight=FontWeight.Black,fontSize=13.sp)
+                        Spacer(Modifier.height(6.dp))
+
+                        if(byWeek.isEmpty()){
+                            Text("Aún no hay jornadas liquidadas.",color=Muted,fontSize=9.sp)
+                        }else{
+                            CoreWeekHeader()
+                            byWeek.forEach{(week,rows)->
+                                val st=coreRecordStats(rows)
+                                HorizontalDivider(color=Border)
+                                CoreWeekRow(week,st)
+                            }
+                        }
+                    }
+                }
+            }
+
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(16.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                ){
+                    Column(Modifier.fillMaxWidth().padding(12.dp)){
+                        Text("POR CLASIFICACIÓN",fontWeight=FontWeight.Black,fontSize=13.sp)
+                        Spacer(Modifier.height(7.dp))
+                        CoreSplitRow("JUGABLE ★",jugable,Green)
+                        Spacer(Modifier.height(6.dp))
+                        CoreSplitRow("LEAN",lean,Blue)
+                        Spacer(Modifier.height(6.dp))
+                        CoreSplitRow("PASS",pass,Muted)
+                    }
+                }
+            }
+
+            item{
+                Surface(
+                    color=Card,
+                    shape=RoundedCornerShape(16.dp),
+                    border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+                ){
+                    Column(Modifier.fillMaxWidth().padding(12.dp)){
+                        Text("POR DIRECCIÓN",fontWeight=FontWeight.Black,fontSize=13.sp)
+                        Spacer(Modifier.height(7.dp))
+                        CoreSplitRow("OVER",overs,Amber)
+                        Spacer(Modifier.height(6.dp))
+                        CoreSplitRow("UNDER",unders,Green)
+                    }
+                }
+            }
+
+            item{
+                Text(
+                    "SNAPSHOTS OFICIALES DEL CORE",
+                    color=Muted,
+                    fontSize=9.sp,
+                    fontWeight=FontWeight.Black,
+                    modifier=Modifier.padding(top=4.dp)
+                )
+            }
+
+            items(official,key={it.gameId}){p->
+                PredictionRow(p){}
+            }
+
+            item{
+                Text(
+                    "El récord general usa sólo AUTO_CENSUS. Los reanálisis MANUAL permanecen auditables en Censo, pero no pueden alterar retrospectivamente el récord oficial.",
+                    color=Muted,
+                    fontSize=8.sp,
+                    modifier=Modifier.padding(vertical=8.dp)
+                )
+            }
+        }
+    }
+}
+
+private data class CoreRecordStats(
+    val wins:Int,
+    val losses:Int,
+    val pushes:Int,
+    val hit:Double?,
+    val brier:Double?
+)
+
+private fun coreRecordStats(rows:List<Prediction>):CoreRecordStats{
+    val wins=rows.count{it.result=="WIN"}
+    val losses=rows.count{it.result=="LOSS"}
+    val pushes=rows.count{it.result=="PUSH"}
+    val decisions=wins+losses
+
+    val brierRows=rows.filter{it.result=="WIN"||it.result=="LOSS"}
+    val brier=if(brierRows.isEmpty())null else brierRows.map{
+        val y=if(it.result=="WIN")1.0 else 0.0
+        (it.probability-y).pow(2)
+    }.average()
+
+    return CoreRecordStats(
+        wins=wins,
+        losses=losses,
+        pushes=pushes,
+        hit=if(decisions>0)wins*100.0/decisions else null,
+        brier=brier
+    )
+}
+
+@Composable
+private fun CoreRecordMetric(
+    label:String,
+    value:String,
+    modifier:Modifier=Modifier,
+    valueColor:Color=Text
+){
+    Surface(
+        modifier=modifier,
+        color=Panel,
+        shape=RoundedCornerShape(11.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
+        Column(
+            Modifier.padding(vertical=9.dp),
+            horizontalAlignment=Alignment.CenterHorizontally
+        ){
+            Text(label,color=Muted,fontSize=7.sp,fontWeight=FontWeight.Black)
+            Text(value,color=valueColor,fontSize=13.sp,fontWeight=FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun CoreWeekHeader(){
+    Row(Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=5.dp)){
+        Text("WEEK",Modifier.weight(.7f),color=Muted,fontSize=7.sp,fontWeight=FontWeight.Black)
+        Text("W-L-P",Modifier.weight(1f),color=Muted,fontSize=7.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)
+        Text("HIT",Modifier.weight(.8f),color=Muted,fontSize=7.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.End)
+        Text("BRIER",Modifier.weight(.8f),color=Muted,fontSize=7.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.End)
+    }
+}
+
+@Composable
+private fun CoreWeekRow(week:Int,s:CoreRecordStats){
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal=5.dp,vertical=8.dp),
+        verticalAlignment=Alignment.CenterVertically
+    ){
+        Text("W$week",Modifier.weight(.7f),fontSize=9.sp,fontWeight=FontWeight.Black)
+        Text("${s.wins}-${s.losses}-${s.pushes}",Modifier.weight(1f),fontSize=9.sp,textAlign=TextAlign.Center)
+        Text(
+            s.hit?.let{"${it.format1()}%"} ?: "—",
+            Modifier.weight(.8f),
+            fontSize=9.sp,
+            color=if((s.hit?:0.0)>=60.0)Green else Text,
+            textAlign=TextAlign.End
+        )
+        Text(
+            s.brier?.format3() ?: "—",
+            Modifier.weight(.8f),
+            fontSize=9.sp,
+            color=Muted,
+            textAlign=TextAlign.End
+        )
+    }
+}
+
+@Composable
+private fun CoreSplitRow(label:String,s:CoreRecordStats,accent:Color){
+    Surface(
+        color=Panel,
+        shape=RoundedCornerShape(11.dp),
+        border=androidx.compose.foundation.BorderStroke(1.dp,Border)
+    ){
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal=10.dp,vertical=9.dp),
+            verticalAlignment=Alignment.CenterVertically
+        ){
+            Text(label,Modifier.weight(1.25f),color=accent,fontSize=9.sp,fontWeight=FontWeight.Black)
+            Text("${s.wins}-${s.losses}-${s.pushes}",Modifier.weight(.8f),fontSize=10.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)
+            Text(s.hit?.let{"${it.format1()}%"} ?: "—",Modifier.weight(.7f),color=Muted,fontSize=9.sp,textAlign=TextAlign.End)
+            Text(s.brier?.format3() ?: "—",Modifier.weight(.7f),color=Muted,fontSize=9.sp,textAlign=TextAlign.End)
         }
     }
 }

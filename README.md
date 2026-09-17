@@ -194,3 +194,15 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Al terminar la semana completa, la siguiente semana pendiente toma su lugar automáticamente.
 - Censo/Audit/Brier conservan el histórico completo.
 - Sin migración SQLite ni cambios de Core/Shadow/Calibration.
+
+## V0.8.4 · Core Record
+
+- Registro general oficial W-L-P del Core.
+- Sólo AUTO_CENSUS cuenta; los reanálisis MANUAL quedan fuera.
+- Hit Rate excluye PUSH del denominador.
+- Brier sobre decisiones WIN/LOSS.
+- Desglose semanal W-L-P / Hit / Brier.
+- Desglose JUGABLE / LEAN / PASS.
+- Desglose OVER / UNDER.
+- Pendientes, oficiales y resueltos visibles.
+- Sin cambios a SQLite, Shadow, OppAdj ni Calibration.
