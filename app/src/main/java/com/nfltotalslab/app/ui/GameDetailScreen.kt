@@ -259,12 +259,18 @@ fun GameDetailScreen(
                                 "${(adjProb*100).f1()}% · reliability ${(intel.reliability*100).f1()}%",
                                 color=DetailText,fontSize=13.sp,fontWeight=FontWeight.Bold
                             )
+                            val neutral=kotlin.math.abs(intel.totalAdjustment)<0.10
                             Text(
-                                if(adjPick==p.pick)
-                                    "ROSTER CONFIRMA la dirección del Core."
-                                else
-                                    "ROSTER CONTRADICE la dirección del Core · NO promover automáticamente.",
-                                color=if(adjPick==p.pick)DetailGreen else DetailRed,
+                                when{
+                                    neutral -> "ROSTER NEUTRAL · sin ajuste material sobre el Core."
+                                    adjPick==p.pick -> "ROSTER CONFIRMA la dirección del Core."
+                                    else -> "ROSTER CONTRADICE la dirección del Core · NO promover automáticamente."
+                                },
+                                color=when{
+                                    neutral->DetailMuted
+                                    adjPick==p.pick->DetailGreen
+                                    else->DetailRed
+                                },
                                 fontSize=10.sp,fontWeight=FontWeight.Bold,
                                 modifier=Modifier.padding(top=5.dp)
                             )
@@ -287,8 +293,13 @@ fun GameDetailScreen(
                                 color=DetailMuted,fontSize=9.sp
                             )
                             Text(
+                                "${intel.away.team} injury: ${intel.away.injuryState} · " +
+                                    "${intel.home.team} injury: ${intel.home.injuryState}",
+                                color=DetailMuted,fontSize=9.sp
+                            )
+                            Text(
                                 "Depth ${if(intel.away.depthLoaded&&intel.home.depthLoaded)"OK" else "PARCIAL"} · " +
-                                    "Injuries ${if(intel.away.injuriesLoaded&&intel.home.injuriesLoaded)"OK" else "PARCIAL"} · " +
+                                    "Injury parse ${if(intel.away.injuriesLoaded&&intel.home.injuriesLoaded)"VALID" else "PARCIAL"} · " +
                                     "Gate ${if(intel.decisionReady)"READY" else "BLOCKED"}",
                                 color=if(intel.decisionReady)DetailGreen else DetailAmber,
                                 fontSize=9.sp,fontWeight=FontWeight.Bold
@@ -346,7 +357,7 @@ private fun CoreDecisionCard(p:Prediction){
 
 @Composable
 private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle:()->Unit){
-    val visible=if(expanded)team.players else team.players.filter{it.starter || it.injuryStatus.isNotBlank()}.take(14)
+    val visible=if(expanded)team.players else team.players.filter{it.coreStarter || it.injuryStatus.isNotBlank()}.take(16)
     Surface(
         color=DetailCard,
         shape=RoundedCornerShape(18.dp),
@@ -359,22 +370,27 @@ private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle
                 Column(Modifier.weight(1f)){
                     Text(team.team,color=DetailText,fontSize=18.sp,fontWeight=FontWeight.Black)
                     Text(
-                        if(team.depthLoaded)
-                            "Titulares ${team.startersAvailable}/${team.startersTotal} · OUT ${team.outCount} · Q ${team.questionableCount}"
-                        else
-                            "Titulares — · OUT ${team.outCount} · Q ${team.questionableCount}",
+                        when{
+                            !team.depthLoaded ->
+                                "Núcleo — · Rank1 raw ${team.rawRankOneCount} · Injury ${team.injuryState}"
+                            !team.injuriesLoaded ->
+                                "Núcleo ${team.startersTotal}/22 · Rank1 raw ${team.rawRankOneCount} · Injury ${team.injuryState}"
+                            else ->
+                                "Núcleo ${team.startersAvailable}/${team.startersTotal} · OUT ${team.outCount} · Q ${team.questionableCount}"
+                        },
                         color=DetailMuted,fontSize=9.sp
                     )
                 }
                 Text(
                     when{
-                        !team.depthLoaded->"DATOS PARCIALES"
+                        !team.depthLoaded->"DEPTH PARCIAL"
+                        !team.injuriesLoaded->"INJURY PARCIAL"
                         team.outCount>=4->"TOCADO"
                         team.outCount>=2->"ATENCIÓN"
-                        else->"ESTABLE"
+                        else->"VALIDADO"
                     },
                     color=when{
-                        !team.depthLoaded->DetailAmber
+                        !team.depthLoaded || !team.injuriesLoaded->DetailAmber
                         team.outCount>=4->DetailRed
                         team.outCount>=2->DetailAmber
                         else->DetailGreen
@@ -383,11 +399,19 @@ private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle
                 )
             }
             Spacer(Modifier.height(9.dp))
+            val teamReady=team.depthLoaded && team.injuriesLoaded
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                SmallMetric("OFENSA",if(team.depthLoaded)"${team.offenseAvailability.f1()}/100" else "—",Modifier.weight(1f))
-                SmallMetric("DEFENSA",if(team.depthLoaded)"${team.defenseAvailability.f1()}/100" else "—",Modifier.weight(1f))
+                SmallMetric("OFENSA",if(teamReady)"${team.offenseAvailability.f1()}/100" else "—",Modifier.weight(1f))
+                SmallMetric("DEFENSA",if(teamReady)"${team.defenseAvailability.f1()}/100" else "—",Modifier.weight(1f))
                 SmallMetric("DEPTH",if(team.depthLoaded)"OK" else if(team.rosterLoaded)"ROSTER" else "—",Modifier.weight(1f))
             }
+            Text(
+                "Núcleo O ${team.offenseCoreStarters}/11 · D ${team.defenseCoreStarters}/11 · " +
+                    "Rank1 raw ${team.rawRankOneCount} · Injury ${team.injuryState}",
+                color=if(teamReady)DetailGreen else DetailAmber,
+                fontSize=8.sp,
+                modifier=Modifier.padding(top=7.dp)
+            )
             Spacer(Modifier.height(9.dp))
             visible.forEachIndexed{idx,p->
                 PlayerAvailabilityRow(p)

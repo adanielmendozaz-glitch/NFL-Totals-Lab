@@ -6,12 +6,15 @@ data class RosterPlayerState(
     val unit:String,
     val depthRank:Int,
     val athleteId:String = "",
+    val coreStarter:Boolean = false,
     val injuryStatus:String = "",
     val injuryDetail:String = ""
 ){
-    val starter:Boolean get() = depthRank == 1
+    val rankOne:Boolean get() = depthRank == 1
+    val starter:Boolean get() = coreStarter
     val depthLabel:String get() = when{
-        depthRank==1 -> "TITULAR"
+        coreStarter -> "TITULAR · NÚCLEO"
+        depthRank==1 -> "RANK 1 · PAQUETE"
         depthRank==2 -> "SUPLENTE 2"
         depthRank==3 -> "SUPLENTE 3"
         depthRank>3 && depthRank<90 -> "DEPTH $depthRank"
@@ -34,10 +37,18 @@ data class TeamRosterIntelligence(
     val defenseLeak:Double,
     val startersTotal:Int,
     val startersAvailable:Int,
+    val offenseCoreStarters:Int,
+    val defenseCoreStarters:Int,
+    val rawRankOneCount:Int,
     val outCount:Int,
     val questionableCount:Int,
     val depthLoaded:Boolean,
     val injuriesLoaded:Boolean,
+    val injuryEndpointOk:Boolean,
+    val injurySchemaOk:Boolean,
+    val injuryRawCount:Int,
+    val injuryParsedCount:Int,
+    val injuryState:String,
     val rosterLoaded:Boolean,
     val depthSource:String,
     val fetchedAt:Long = System.currentTimeMillis()

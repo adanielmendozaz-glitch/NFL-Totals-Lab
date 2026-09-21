@@ -29,6 +29,14 @@ class EspnRosterService {
         val detail:String
     )
 
+    private data class InjuryParseResult(
+        val items:Map<String,InjuryInfo>,
+        val rawCount:Int,
+        val parsedCount:Int,
+        val schemaRecognized:Boolean
+    )
+
+
     private data class AthleteIdentity(
         val id:String,
         val name:String,
@@ -133,7 +141,34 @@ class EspnRosterService {
                     "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/$id/injuries"
                 ))
             }
-            val injuries=injuryResult.getOrNull()?.let{parseInjuries(it)} ?: emptyMap()
+
+            val injuryParsed=if(injuryResult.isSuccess){
+                parseInjuries(injuryResult.getOrThrow(),rosterById)
+            }else{
+                InjuryParseResult(emptyMap(),0,0,false)
+            }
+
+            val parseRatio=if(injuryParsed.rawCount==0)1.0
+                else injuryParsed.parsedCount.toDouble()/injuryParsed.rawCount.toDouble()
+
+            val injuriesValid=
+                injuryResult.isSuccess &&
+                injuryParsed.schemaRecognized &&
+                (
+                    injuryParsed.rawCount==0 ||
+                    (injuryParsed.parsedCount>0 && parseRatio>=.60)
+                )
+
+            val injuryState=when{
+                injuryResult.isFailure -> "ENDPOINT ERROR"
+                !injuryParsed.schemaRecognized -> "SCHEMA NO RECONOCIDO"
+                injuryParsed.rawCount==0 -> "VALID EMPTY 0/0"
+                injuriesValid -> "VALID ${injuryParsed.parsedCount}/${injuryParsed.rawCount}"
+                else -> "PARTIAL ${injuryParsed.parsedCount}/${injuryParsed.rawCount}"
+            }
+
+            val injuries=injuryParsed.items
+            val rosterByName=rosterPlayers.associateBy{normalizeName(it.name)}
 
             val basePlayers=if(depthPlayers.isNotEmpty())depthPlayers else rosterPlayers
             val merged=basePlayers.map{p->
@@ -146,56 +181,78 @@ class EspnRosterService {
 
             injuries.forEach{(key,inj)->
                 if(merged.none{normalizeName(it.name)==key}){
+                    val rosterHit=rosterByName[key]
                     merged+=RosterPlayerState(
                         name=inj.name,
-                        position="—",
-                        unit="OTHER",
+                        position=rosterHit?.position ?: "—",
+                        unit=rosterHit?.unit ?: "OTHER",
                         depthRank=99,
-                        athleteId="",
+                        athleteId=rosterHit?.athleteId ?: "",
+                        coreStarter=false,
                         injuryStatus=inj.status,
                         injuryDetail=inj.detail
                     )
                 }
             }
 
-            val offenseStarters=depthPlayers.count{it.unit=="OFFENSE" && it.starter}
-            val defenseStarters=depthPlayers.count{it.unit=="DEFENSE" && it.starter}
+            val normalized=markCoreStarters(merged)
+            val offenseCore=normalized.count{it.coreStarter && it.unit=="OFFENSE"}
+            val defenseCore=normalized.count{it.coreStarter && it.unit=="DEFENSE"}
+            val rawRankOne=depthPlayers.count{it.rankOne}
 
             val depthLoaded=
                 depthPlayers.isNotEmpty() &&
-                offenseStarters>=8 &&
-                defenseStarters>=8
+                offenseCore>=10 &&
+                defenseCore>=10
 
-            val offense=if(depthLoaded)merged.filter{it.unit=="OFFENSE"} else emptyList()
-            val defense=if(depthLoaded)merged.filter{it.unit=="DEFENSE"} else emptyList()
+            val dataReady=depthLoaded && injuriesValid
+            val offense=if(dataReady)normalized.filter{it.unit=="OFFENSE"} else emptyList()
+            val defense=if(dataReady)normalized.filter{it.unit=="DEFENSE"} else emptyList()
             val offPenalty=offense.sumOf{impactPoints(it)}
             val defLeak=defense.sumOf{impactPoints(it)}
-            val starters=if(depthLoaded)merged.filter{it.starter} else emptyList()
+            val starters=if(depthLoaded)normalized.filter{it.coreStarter} else emptyList()
 
             TeamRosterIntelligence(
                 team=team,
-                players=merged.sortedWith(
+                players=normalized.sortedWith(
                     compareBy<RosterPlayerState>{
                         when(it.unit){"OFFENSE"->0;"DEFENSE"->1;else->2}
-                    }.thenBy{it.position}.thenBy{it.depthRank}.thenBy{it.name}
+                    }.thenByDescending{it.coreStarter}
+                        .thenBy{it.position}
+                        .thenBy{it.depthRank}
+                        .thenBy{it.name}
                 ),
-                offenseAvailability=if(depthLoaded)
+                offenseAvailability=if(dataReady)
                     (100.0-offPenalty*8.0).coerceIn(45.0,100.0)
                 else 0.0,
-                defenseAvailability=if(depthLoaded)
+                defenseAvailability=if(dataReady)
                     (100.0-defLeak*8.0).coerceIn(45.0,100.0)
                 else 0.0,
                 offensePenalty=offPenalty,
                 defenseLeak=defLeak,
                 startersTotal=starters.size,
-                startersAvailable=starters.count{severity(it.injuryStatus)<.75},
-                outCount=merged.count{severity(it.injuryStatus)>=.75},
-                questionableCount=merged.count{
-                    it.injuryStatus.contains("QUESTION",true) ||
-                    it.injuryStatus.contains("DOUBT",true)
-                },
+                startersAvailable=if(injuriesValid)
+                    starters.count{severity(it.injuryStatus)<.75}
+                else 0,
+                offenseCoreStarters=offenseCore,
+                defenseCoreStarters=defenseCore,
+                rawRankOneCount=rawRankOne,
+                outCount=if(injuriesValid)
+                    normalized.count{severity(it.injuryStatus)>=.75}
+                else 0,
+                questionableCount=if(injuriesValid)
+                    normalized.count{
+                        it.injuryStatus.contains("QUESTION",true) ||
+                        it.injuryStatus.contains("DOUBT",true)
+                    }
+                else 0,
                 depthLoaded=depthLoaded,
-                injuriesLoaded=injuryResult.isSuccess,
+                injuriesLoaded=injuriesValid,
+                injuryEndpointOk=injuryResult.isSuccess,
+                injurySchemaOk=injuryParsed.schemaRecognized,
+                injuryRawCount=injuryParsed.rawCount,
+                injuryParsedCount=injuryParsed.parsedCount,
+                injuryState=injuryState,
                 rosterLoaded=rosterResult.isSuccess && rosterPlayers.isNotEmpty(),
                 depthSource=when{
                     siteDepthPlayers.isNotEmpty()->"ESPN SITE"
@@ -204,7 +261,77 @@ class EspnRosterService {
                     else->"SIN DEPTH"
                 }
             )
+
         }
+
+    private fun markCoreStarters(players:List<RosterPlayerState>):List<RosterPlayerState>{
+        val rankOne=players.filter{
+            it.depthRank==1 && (it.unit=="OFFENSE" || it.unit=="DEFENSE")
+        }
+        val selected=linkedSetOf<String>()
+
+        fun choose(unit:String,limit:Int,predicate:(String)->Boolean){
+            rankOne.asSequence()
+                .filter{it.unit==unit}
+                .filter{predicate(it.position.uppercase())}
+                .filter{starterKey(it) !in selected}
+                .take(limit)
+                .forEach{selected+=starterKey(it)}
+        }
+
+        choose("OFFENSE",1){it in setOf("QB","QUARTERBACK")}
+        choose("OFFENSE",1){it in setOf("RB","HB","FB","RUNNING BACK","FULLBACK")}
+        choose("OFFENSE",3){it in setOf("WR","LWR","RWR","SLOT","WIDE RECEIVER")}
+        choose("OFFENSE",1){it in setOf("TE","TIGHT END")}
+        choose("OFFENSE",5){
+            it in setOf(
+                "LT","RT","OT","T","LG","RG","G","C","OL",
+                "LEFT TACKLE","RIGHT TACKLE","LEFT GUARD","RIGHT GUARD","CENTER"
+            )
+        }
+        fillUnit(rankOne,selected,"OFFENSE",11)
+
+        choose("DEFENSE",4){
+            it in setOf(
+                "DE","LDE","RDE","EDGE","DT","NT","DL",
+                "LEFT DEFENSIVE END","RIGHT DEFENSIVE END","DEFENSIVE TACKLE"
+            )
+        }
+        choose("DEFENSE",3){
+            it in setOf("LB","ILB","MLB","OLB","LOLB","ROLB","LINEBACKER")
+        }
+        choose("DEFENSE",2){
+            it in setOf("CB","LCB","RCB","NB","DB","CORNERBACK")
+        }
+        choose("DEFENSE",2){
+            it in setOf("S","FS","SS","FREE SAFETY","STRONG SAFETY")
+        }
+        fillUnit(rankOne,selected,"DEFENSE",11)
+
+        return players.map{p->p.copy(coreStarter=starterKey(p) in selected)}
+    }
+
+    private fun fillUnit(
+        rankOne:List<RosterPlayerState>,
+        selected:MutableSet<String>,
+        unit:String,
+        target:Int
+    ){
+        var current=rankOne.count{it.unit==unit && starterKey(it) in selected}
+        rankOne.asSequence()
+            .filter{it.unit==unit}
+            .filter{starterKey(it) !in selected}
+            .forEach{p->
+                if(current<target){
+                    selected+=starterKey(p)
+                    current++
+                }
+            }
+    }
+
+    private fun starterKey(p:RosterPlayerState):String =
+        if(p.athleteId.isNotBlank())"ID:${p.athleteId}"
+        else "NM:${normalizeName(p.name)}:${p.position.uppercase()}"
 
     private fun parseSiteDepthChart(root:JSONObject):List<RosterPlayerState> =
         parseEmbeddedDepthGroups(root.optJSONArray("depthCharts"))
@@ -459,52 +586,96 @@ class EspnRosterService {
         }
     }
 
-    private fun parseInjuries(root:JSONObject):Map<String,InjuryInfo>{
-        val out=linkedMapOf<String,InjuryInfo>()
+    private suspend fun parseInjuries(
+        root:JSONObject,
+        rosterById:Map<String,RosterPlayerState>
+    ):InjuryParseResult = coroutineScope {
+        data class RawInjury(
+            val athleteId:String,
+            val embeddedName:String,
+            val ref:String,
+            val status:String,
+            val detail:String
+        )
+
+        val rootArray=root.optJSONArray("injuries") ?: root.optJSONArray("items")
+        if(rootArray==null){
+            return@coroutineScope InjuryParseResult(emptyMap(),0,0,false)
+        }
+
+        val raw=mutableListOf<RawInjury>()
 
         fun consume(arr:JSONArray){
             for(i in 0 until arr.length()){
                 val item=arr.optJSONObject(i) ?: continue
-                val nested=item.optJSONArray("injuries")
-
+                val nested=item.optJSONArray("injuries") ?: item.optJSONArray("items")
                 if(nested!=null){
                     consume(nested)
                     continue
                 }
 
-                val athlete=item.optJSONObject("athlete")
-                val name=athlete?.let{
+                val athlete=item.optJSONObject("athlete") ?: item.optJSONObject("player")
+                val ref=athlete?.optString("\$ref","").orEmpty()
+                val id=athlete?.optString("id","").orEmpty().ifBlank{
+                    extractAthleteId(ref)
+                }
+                val embeddedName=athlete?.let{
                     it.optString("displayName",it.optString("fullName",""))
                 }?.trim().orEmpty()
 
-                if(name.isBlank())continue
-
-                val status=when(val raw=item.opt("status")){
-                    is String -> raw
-                    is JSONObject -> raw.optString(
-                        "description",
-                        raw.optString("name","")
-                    )
+                val status=when(val value=item.opt("status")){
+                    is String -> value
+                    is JSONObject -> value.optString("description",value.optString("name",""))
                     else -> ""
-                }.ifBlank{
-                    item.optString("statusDescription","")
-                }
+                }.ifBlank{item.optString("statusDescription","")}
 
                 val detail=item.optJSONObject("type")
                     ?.optString("description","")
                     ?.ifBlank{item.optString("details","")}
                     ?: item.optString("details","")
 
-                out[normalizeName(name)]=InjuryInfo(
-                    name=name,
-                    status=status,
-                    detail=detail
-                )
+                raw+=RawInjury(id,embeddedName,ref,status,detail)
             }
         }
 
-        root.optJSONArray("injuries")?.let{consume(it)}
-        return out
+        consume(rootArray)
+
+        val unresolved=raw
+            .filter{
+                it.embeddedName.isBlank() &&
+                rosterById[it.athleteId]?.name.isNullOrBlank() &&
+                it.ref.isNotBlank()
+            }
+            .map{it.ref}
+            .distinct()
+
+        val resolvedByRef=unresolved.map{ref->
+            async(Dispatchers.IO){ref to resolveAthleteRef(ref)}
+        }.awaitAll().toMap()
+
+        var parsedCount=0
+        val out=linkedMapOf<String,InjuryInfo>()
+
+        raw.forEach{x->
+            val rosterHit=rosterById[x.athleteId]
+            val resolved=resolvedByRef[x.ref]
+            val name=x.embeddedName
+                .ifBlank{rosterHit?.name.orEmpty()}
+                .ifBlank{resolved?.name.orEmpty()}
+                .trim()
+
+            if(name.isNotBlank()){
+                parsedCount++
+                out[normalizeName(name)]=InjuryInfo(name,x.status,x.detail)
+            }
+        }
+
+        InjuryParseResult(
+            items=out,
+            rawCount=raw.size,
+            parsedCount=parsedCount,
+            schemaRecognized=true
+        )
     }
 
     private fun unitForPosition(position:String,groupName:String):String{
@@ -539,10 +710,11 @@ class EspnRosterService {
         if(sev<=0.0)return 0.0
 
         val depth=when{
-            p.depthRank==1->1.0
-            p.depthRank==2->.40
-            p.depthRank==3->.20
-            else->.10
+            p.coreStarter->1.0
+            p.depthRank==1->.25
+            p.depthRank==2->.30
+            p.depthRank==3->.15
+            else->.05
         }
 
         return sev*depth*positionWeight(
@@ -607,8 +779,13 @@ class EspnRosterService {
         }else .20
     }
 
-    private fun teamReliability(t:TeamRosterIntelligence):Double =
-        if(t.depthLoaded && t.injuriesLoaded).90 else 0.0
+    private fun teamReliability(t:TeamRosterIntelligence):Double{
+        if(!t.depthLoaded || !t.injuriesLoaded)return 0.0
+        val starterCoverage=(t.startersTotal.toDouble()/22.0).coerceIn(0.0,1.0)
+        val injuryCoverage=if(t.injuryRawCount==0)1.0
+            else (t.injuryParsedCount.toDouble()/t.injuryRawCount.toDouble()).coerceIn(0.0,1.0)
+        return (.90*starterCoverage*injuryCoverage).coerceIn(0.0,.90)
+    }
 
     private fun emptyTeam(team:String)=TeamRosterIntelligence(
         team=team,
@@ -619,10 +796,18 @@ class EspnRosterService {
         defenseLeak=0.0,
         startersTotal=0,
         startersAvailable=0,
+        offenseCoreStarters=0,
+        defenseCoreStarters=0,
+        rawRankOneCount=0,
         outCount=0,
         questionableCount=0,
         depthLoaded=false,
         injuriesLoaded=false,
+        injuryEndpointOk=false,
+        injurySchemaOk=false,
+        injuryRawCount=0,
+        injuryParsedCount=0,
+        injuryState="SIN DATOS",
         rosterLoaded=false,
         depthSource="SIN DATOS"
     )
@@ -673,7 +858,7 @@ class EspnRosterService {
             instanceFollowRedirects=true
             setRequestProperty(
                 "User-Agent",
-                "NFL-Totals-Lab-Android/0.9.2.2"
+                "NFL-Totals-Lab-Android/0.9.2.3"
             )
             connect()
 

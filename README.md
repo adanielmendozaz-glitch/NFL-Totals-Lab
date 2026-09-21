@@ -261,3 +261,13 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Keeps Roster Quality Gate: incomplete depth remains NO CONCLUYENTE.
 - Core, Ranking, Calibration and official model weights remain unchanged.
 - No SQLite migration.
+
+
+## V0.9.2.3 · Roster Validation
+
+- Injury endpoint success is separated from parsed injury-data validity.
+- Raw injury rows and parsed rows are audited.
+- ESPN rank-1 package positions are normalized to an 11+11 core.
+- Extra package starters no longer count as independent core starters.
+- Zero roster adjustment is NEUTRAL, not CONFIRMS.
+- Invalid injury parsing blocks Roster Shadow. No SQLite migration.
