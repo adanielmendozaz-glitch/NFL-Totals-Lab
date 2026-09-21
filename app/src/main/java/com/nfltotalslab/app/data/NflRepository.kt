@@ -181,9 +181,10 @@ class NflRepository(
         withContext(Dispatchers.IO){
             val intel=rosterApi.fetchGameIntelligence(game)
             if(core!=null && !game.finished && !KickoffGuard.isLocked(game)){
-                val shadow=RosterAdjustmentShadow.fromCore(core,intel)
-                if(!db.hasShadowPrediction(shadow.gameId,shadow.modelName,shadow.inputKey)){
-                    db.saveShadowPrediction(shadow)
+                RosterAdjustmentShadow.fromCore(core,intel)?.let{shadow->
+                    if(!db.hasShadowPrediction(shadow.gameId,shadow.modelName,shadow.inputKey)){
+                        db.saveShadowPrediction(shadow)
+                    }
                 }
             }
             intel

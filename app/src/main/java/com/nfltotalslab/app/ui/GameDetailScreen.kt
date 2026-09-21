@@ -218,6 +218,23 @@ fun GameDetailScreen(
                         SurfaceCard{
                             Text("Necesita Core + Roster Intelligence para calcular el Shadow.",color=DetailMuted,fontSize=10.sp)
                         }
+                    }else if(!intel.decisionReady){
+                        SurfaceCard{
+                            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                                SmallMetric("CORE μ",fmt1(p.projection),Modifier.weight(1f))
+                                SmallMetric("ROSTER Δ","—",Modifier.weight(1f))
+                                SmallMetric("AJUSTADA μ","—",Modifier.weight(1f))
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text("NO CONCLUYENTE",color=DetailAmber,fontSize=24.sp,fontWeight=FontWeight.Black)
+                            Text("Roster incompleto · reliability no habilitada",color=DetailText,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                            Text(intel.qualityReason,color=DetailMuted,fontSize=10.sp,modifier=Modifier.padding(top=5.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "QUALITY GATE: con depth/injury incompleto NO confirma ni contradice al Core y NO se guarda Roster Shadow.",
+                                color=DetailAmber,fontSize=9.sp,fontWeight=FontWeight.Bold
+                            )
+                        }
                     }else{
                         val baseOver=if(p.pick=="OVER")p.probability else 1.0-p.probability
                         val shift=(intel.totalAdjustment*.025*intel.reliability).coerceIn(-.15,.15)
@@ -266,9 +283,15 @@ fun GameDetailScreen(
                         SurfaceCard{
                             Text(intel.source,color=DetailText,fontWeight=FontWeight.Bold,fontSize=10.sp)
                             Text(
-                                "Depth ${if(intel.away.depthLoaded&&intel.home.depthLoaded)"OK" else "PARCIAL"} · " +
-                                    "Injuries ${if(intel.away.injuriesLoaded&&intel.home.injuriesLoaded)"OK" else "PARCIAL"} · actualizado al abrir.",
+                                "${intel.away.team}: ${intel.away.depthSource} · ${intel.home.team}: ${intel.home.depthSource}",
                                 color=DetailMuted,fontSize=9.sp
+                            )
+                            Text(
+                                "Depth ${if(intel.away.depthLoaded&&intel.home.depthLoaded)"OK" else "PARCIAL"} · " +
+                                    "Injuries ${if(intel.away.injuriesLoaded&&intel.home.injuriesLoaded)"OK" else "PARCIAL"} · " +
+                                    "Gate ${if(intel.decisionReady)"READY" else "BLOCKED"}",
+                                color=if(intel.decisionReady)DetailGreen else DetailAmber,
+                                fontSize=9.sp,fontWeight=FontWeight.Bold
                             )
                         }
                     }
@@ -336,17 +359,22 @@ private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle
                 Column(Modifier.weight(1f)){
                     Text(team.team,color=DetailText,fontSize=18.sp,fontWeight=FontWeight.Black)
                     Text(
-                        "Titulares ${team.startersAvailable}/${team.startersTotal} · OUT ${team.outCount} · Q ${team.questionableCount}",
+                        if(team.depthLoaded)
+                            "Titulares ${team.startersAvailable}/${team.startersTotal} · OUT ${team.outCount} · Q ${team.questionableCount}"
+                        else
+                            "Titulares — · OUT ${team.outCount} · Q ${team.questionableCount}",
                         color=DetailMuted,fontSize=9.sp
                     )
                 }
                 Text(
                     when{
+                        !team.depthLoaded->"DATOS PARCIALES"
                         team.outCount>=4->"TOCADO"
                         team.outCount>=2->"ATENCIÓN"
                         else->"ESTABLE"
                     },
                     color=when{
+                        !team.depthLoaded->DetailAmber
                         team.outCount>=4->DetailRed
                         team.outCount>=2->DetailAmber
                         else->DetailGreen
@@ -356,9 +384,9 @@ private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle
             }
             Spacer(Modifier.height(9.dp))
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                SmallMetric("OFENSA","${team.offenseAvailability.f1()}/100",Modifier.weight(1f))
-                SmallMetric("DEFENSA","${team.defenseAvailability.f1()}/100",Modifier.weight(1f))
-                SmallMetric("DEPTH",if(team.depthLoaded)"OK" else "—",Modifier.weight(1f))
+                SmallMetric("OFENSA",if(team.depthLoaded)"${team.offenseAvailability.f1()}/100" else "—",Modifier.weight(1f))
+                SmallMetric("DEFENSA",if(team.depthLoaded)"${team.defenseAvailability.f1()}/100" else "—",Modifier.weight(1f))
+                SmallMetric("DEPTH",if(team.depthLoaded)"OK" else if(team.rosterLoaded)"ROSTER" else "—",Modifier.weight(1f))
             }
             Spacer(Modifier.height(9.dp))
             visible.forEachIndexed{idx,p->
@@ -366,8 +394,14 @@ private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle
                 if(idx<visible.lastIndex)HorizontalDivider(color=DetailBorder)
             }
             if(team.players.isEmpty()){
-                Text("No se recibió depth chart para este equipo.",color=DetailMuted,fontSize=9.sp)
+                Text("No se recibió depth chart ni roster utilizable para este equipo.",color=DetailMuted,fontSize=9.sp)
             }else{
+                if(!team.depthLoaded){
+                    Text(
+                        "Roster visible como referencia, pero sin depth suficiente NO se asume titularidad/suplencia ni se calcula impacto.",
+                        color=DetailAmber,fontSize=8.sp,modifier=Modifier.padding(top=7.dp)
+                    )
+                }
                 Text(
                     if(expanded)"Ocultar profundidad" else "Ver roster/depth completo (${team.players.size})",
                     color=DetailBlue,fontSize=10.sp,fontWeight=FontWeight.Bold,

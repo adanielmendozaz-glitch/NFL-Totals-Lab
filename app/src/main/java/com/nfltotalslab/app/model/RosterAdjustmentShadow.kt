@@ -6,10 +6,11 @@ import com.nfltotalslab.app.data.ShadowPrediction
 import kotlin.math.max
 
 object RosterAdjustmentShadow {
-    fun fromCore(core:Prediction,intel:GameRosterIntelligence):ShadowPrediction{
+    fun fromCore(core:Prediction,intel:GameRosterIntelligence):ShadowPrediction?{
+        if(!intel.decisionReady)return null
+
         val reliability=intel.reliability.coerceIn(0.0,1.0)
         val projection=core.projection+intel.totalAdjustment
-
         val baseOver=if(core.pick=="OVER")core.probability else 1.0-core.probability
         val rosterShift=(intel.totalAdjustment*.025*reliability).coerceIn(-.15,.15)
         val pOver=(baseOver+rosterShift).coerceIn(.05,.95)
@@ -17,7 +18,8 @@ object RosterAdjustmentShadow {
         val pick=if(pOver>=pUnder)"OVER" else "UNDER"
         val prob=max(pOver,pUnder)
 
-        val key="${core.inputKey}|ROSTER_V1|R=${fmt(reliability)}|D=${fmt(intel.totalAdjustment)}|${intel.fingerprint}"
+        val key="${core.inputKey}|ROSTER_V1|R=${fmt(reliability)}|" +
+            "D=${fmt(intel.totalAdjustment)}|${intel.fingerprint}"
 
         return ShadowPrediction(
             id=core.id*100L+92L,

@@ -242,3 +242,12 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Shadow NO modifica Core, Ranking, Calibration ni apuestas oficiales.
 - Se guarda en shadow_predictions y entra al Data Vault/Audit cuando se liquida.
 - No hay migración SQLite.
+
+
+## V0.9.2.1 · Roster Data Quality Gate
+
+- ESPN Site depth chart primary + ESPN Core fallback.
+- Roster endpoint is visual fallback only when depth is unavailable.
+- Incomplete data shows dashes instead of fake 100/100 availability.
+- Incomplete roster cannot CONFIRM/CONTRADICT Core and creates no Shadow.
+- Core/Ranking/Calibration remain unchanged; no SQLite migration.

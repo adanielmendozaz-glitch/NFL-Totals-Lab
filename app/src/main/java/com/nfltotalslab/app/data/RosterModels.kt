@@ -36,6 +36,8 @@ data class TeamRosterIntelligence(
     val questionableCount:Int,
     val depthLoaded:Boolean,
     val injuriesLoaded:Boolean,
+    val rosterLoaded:Boolean,
+    val depthSource:String,
     val fetchedAt:Long = System.currentTimeMillis()
 )
 
@@ -44,6 +46,8 @@ data class GameRosterIntelligence(
     val home:TeamRosterIntelligence,
     val totalAdjustment:Double,
     val reliability:Double,
+    val decisionReady:Boolean,
+    val qualityReason:String,
     val source:String,
     val fingerprint:String,
     val fetchedAt:Long = System.currentTimeMillis()
