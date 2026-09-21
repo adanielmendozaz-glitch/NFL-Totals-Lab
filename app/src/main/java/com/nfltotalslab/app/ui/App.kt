@@ -12,9 +12,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -86,7 +89,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.8.4 · CORE RECORD",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.9.0 · AUDIT FOUNDATION",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -159,7 +162,7 @@ fun NflTotalsApp(context:Context){
                 )
                 main==MainTab.RANKING->RankingScreen(preds,games){selected=it}
                 main==MainTab.EQUIPOS->TeamsScreen(metrics)
-                main==MainTab.AJUSTES->SettingsScreen(season,repo.lastSync(),onSeason={season=it;refresh()})
+                main==MainTab.AJUSTES->SettingsScreen(season,repo.lastSync(),onSeason={season=it;refresh()},onBuildVault={repo.exportDataVault(season)})
             }
             selected?.let{p->
                 PredictionDialog(p,onDismiss={selected=null},onBet={
@@ -1475,7 +1478,37 @@ private fun BrierScreen(preds:List<Prediction>,shadows:List<ShadowPrediction>,on
 }
 
 @Composable
-private fun SettingsScreen(season:Int,lastSync:Long?,onSeason:(Int)->Unit){
+private fun SettingsScreen(
+    season:Int,
+    lastSync:Long?,
+    onSeason:(Int)->Unit,
+    onBuildVault:()->String
+){
+    val localContext=LocalContext.current
+    var pendingVault by remember{mutableStateOf<String?>(null)}
+    var vaultStatus by remember{mutableStateOf<String?>(null)}
+
+    val vaultLauncher=rememberLauncherForActivityResult(
+        contract=ActivityResultContracts.CreateDocument("application/json")
+    ){uri->
+        if(uri==null){
+            vaultStatus="Exportación cancelada"
+        }else{
+            val payload=pendingVault
+            if(payload==null){
+                vaultStatus="No había Data Vault preparado"
+            }else{
+                runCatching{
+                    localContext.contentResolver.openOutputStream(uri)?.use{out->
+                        out.write(payload.toByteArray(Charsets.UTF_8))
+                    } ?: error("No se pudo abrir el destino")
+                }.onSuccess{vaultStatus="DATA VAULT EXPORTADO ✓"}
+                    .onFailure{vaultStatus="Error al exportar: ${it.message}"}
+            }
+        }
+        pendingVault=null
+    }
+
     Column(Modifier.fillMaxSize().padding(14.dp)){
         Text("AJUSTES",fontWeight=FontWeight.Black,fontSize=20.sp)
         Spacer(Modifier.height(10.dp))
@@ -1489,14 +1522,36 @@ private fun SettingsScreen(season:Int,lastSync:Long?,onSeason:(Int)->Unit){
                     OutlinedButton(onClick={onSeason(season+1)}){Text("+")}
                 }
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
-                Text("CORE",color=Muted,fontSize=10.sp)
-                Text("Markov Drive 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Shadow Poisson 10%",fontSize=12.sp)
-                Spacer(Modifier.height(8.dp))
-                Text("100,000 simulaciones por motor · Shadow audita cada motor",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
-                Text("FINAL LIVE/SYNC → Core + Shadow + Brier + Audit automático",color=Muted,fontSize=10.sp)
-                Spacer(Modifier.height(12.dp))
+
+                Text("CORE · INTEGRITY GATE",color=Muted,fontSize=10.sp)
+                Text("Markov 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Poisson 10%",fontSize=12.sp)
+                Spacer(Modifier.height(6.dp))
+                Text("100,000 simulaciones por motor",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("JUGABLE exige probabilidad + acuerdo entre motores + edge. Con menos de 3 juegos por equipo se limita la confianza.",color=Muted,fontSize=10.sp)
+
+                HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
+                Text("APRENDIZAJE SHADOW",color=Muted,fontSize=10.sp)
+                Text("Adaptive Ensemble",fontWeight=FontWeight.Black,fontSize=13.sp,color=Blue)
+                Text("Aprende pesos con Brier de FINALs previos. Parte de 30/25/20/15/10 y usa shrinkage N/(N+32). No modifica el Core.",color=Muted,fontSize=10.sp)
+
+                HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
-                Text("SQLite local protegido por sandbox de Android",fontWeight=FontWeight.Bold,fontSize=12.sp)
+                Text("Exporta juegos, métricas, predicciones + motores, Shadow, calibración, apuestas, Bank y diagnósticos.",fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("Será la base del backtest y del ajuste real de pesos.",color=Muted,fontSize=10.sp)
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick={
+                        runCatching{onBuildVault()}.onSuccess{payload->
+                            pendingVault=payload
+                            val stamp=SimpleDateFormat("yyyyMMdd_HHmm",Locale.US).format(Date())
+                            vaultLauncher.launch("NFL_DataVault_${season}_${stamp}.json")
+                        }.onFailure{vaultStatus="Error preparando Data Vault: ${it.message}"}
+                    },
+                    modifier=Modifier.fillMaxWidth(),
+                    colors=ButtonDefaults.buttonColors(containerColor=Blue)
+                ){Text("EXPORT DATA VAULT JSON",fontWeight=FontWeight.Black,fontSize=10.sp)}
+                vaultStatus?.let{Text(it,color=if(it.contains("✓"))Green else Amber,fontSize=10.sp,modifier=Modifier.padding(top=7.dp))}
+                Spacer(Modifier.height(8.dp))
                 Text(lastSync?.let{"Último sync: "+Date(it).toString()} ?: "Aún no sincronizado",color=Muted,fontSize=10.sp)
             }
         }

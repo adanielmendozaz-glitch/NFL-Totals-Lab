@@ -2,6 +2,7 @@ package com.nfltotalslab.app.data
 
 import com.nfltotalslab.app.model.ShadowLab
 import com.nfltotalslab.app.model.OpponentAdjustmentShadow
+import com.nfltotalslab.app.model.AdaptiveEnsembleShadow
 import com.nfltotalslab.app.model.TotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
@@ -13,7 +14,7 @@ class NflRepository(
     private val api:NflverseService=NflverseService()
 ){
     private val engine=TotalsEngine(100_000)
-    private val modelVersion="0.4"
+    private val modelVersion="0.9.0-integrity"
     private val deepCacheMs=4L*60L*60L*1000L
 
     suspend fun fastSync(season:Int):SyncSummary = withContext(Dispatchers.IO){
@@ -159,6 +160,20 @@ class NflRepository(
         db.savePrediction(p)
         p
     }
+
+    fun exportDataVault(season:Int):String =
+        DataVaultExporter.build(
+            season=season,
+            games=db.loadGames(season),
+            metrics=db.loadMetrics(season),
+            predictions=db.loadPredictions(),
+            shadows=db.loadShadowPredictions(),
+            calibrations=db.loadCalibrationSnapshots(),
+            bets=db.loadBets(),
+            bank=db.loadBank(),
+            lastSync=lastSync(),
+            lastDeepSync=lastDeepSync()
+        )
 
     fun addBet(p:Prediction,odds:Double=1.91,stake:Double=100.0){
         db.saveBet(BetRecord(predictionId=p.id,gameId=p.gameId,market="${p.pick} ${p.line}",odds=odds,stake=stake))
@@ -312,6 +327,7 @@ class NflRepository(
 
         val metricMap=metrics.associateBy{it.team}
         val cores=db.loadPredictions()
+        val shadowHistory=db.loadShadowPredictions()
         val candidates=schedule.filter{
             it.gameType=="REG" &&
             it.week==week &&
@@ -344,6 +360,13 @@ class NflRepository(
                 schedule=schedule,
                 engine=engine
             ).forEach{x->
+                if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
+                    db.saveShadowPrediction(x)
+                    count++
+                }
+            }
+
+            AdaptiveEnsembleShadow.fromCore(core,shadowHistory)?.let{x->
                 if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
                     db.saveShadowPrediction(x)
                     count++

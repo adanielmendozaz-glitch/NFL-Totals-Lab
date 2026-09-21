@@ -34,9 +34,18 @@ class TotalsEngine(private val simulations:Int=100_000) {
         val pUnder=engines.indices.sumOf{i->engines[i].pUnder*w[i]}
         val pick=if(pOver>=pUnder)"OVER" else "UNDER"
         val prob=max(pOver,pUnder)
+        val agreement=engines.count{x->
+            val side=if(x.pOver>=x.pUnder)"OVER" else "UNDER"
+            side==pick
+        }
+        val edge=kotlin.math.abs(projection-line)
+        val sampleGames=kotlin.math.min(away.games,home.games)
         val classification=when {
-            prob>=.66 -> "JUGABLE ★"
-            prob>=.60 -> "LEAN"
+            sampleGames==0 -> "PASS · NO SAMPLE"
+            sampleGames<3 && prob>=.62 && agreement>=4 && edge>=2.0 -> "LEAN · EARLY"
+            sampleGames<3 -> "PASS · EARLY"
+            prob>=.66 && agreement>=4 && edge>=2.5 -> "JUGABLE ★"
+            prob>=.60 && agreement>=3 && edge>=1.5 -> "LEAN"
             else -> "PASS"
         }
         return Prediction(

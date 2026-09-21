@@ -206,3 +206,16 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Desglose OVER / UNDER.
 - Pendientes, oficiales y resueltos visibles.
 - Sin cambios a SQLite, Shadow, OppAdj ni Calibration.
+
+## V0.9.0 · Audit Foundation
+
+- Data Vault JSON exportable desde Ajustes.
+- Incluye games, metrics, predictions+engines, shadows, calibration, bets, bank y diagnostics.
+- Corrige modelVersion hacia adelante: 0.9.0-integrity.
+- Progressive Calibration entrena sólo con la versión vigente del Core.
+- Adaptive Ensemble Shadow aprende pesos por Brier usando FINALs previos.
+- Shrinkage fuerte N/(N+32); Adaptive nunca modifica el Core.
+- Integrity Gate: JUGABLE exige probabilidad, acuerdo entre motores y edge.
+- Muestra temprana (<3 juegos/equipo) limita confianza a LEAN/PASS.
+- Sin migración SQLite.
+- No se cambian todavía los pesos oficiales del Core: primero exportamos y backtesteamos.

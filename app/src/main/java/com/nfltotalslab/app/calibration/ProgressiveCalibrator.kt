@@ -19,7 +19,9 @@ data class CalibrationState(val trainN:Int,val intercept:Double,val slope:Double
 object ProgressiveCalibrator {
     private const val RIDGE=24.0
     fun fit(predictions:List<Prediction>):CalibrationState{
-        val rows=predictions.filter{it.analysisSource=="AUTO_CENSUS" && (it.result=="WIN" || it.result=="LOSS")}
+        val autos=predictions.filter{it.analysisSource=="AUTO_CENSUS"}
+        val targetVersion=autos.maxByOrNull{it.createdAt}?.modelVersion
+        val rows=autos.filter{it.modelVersion==targetVersion && (it.result=="WIN" || it.result=="LOSS")}
             .groupBy{it.gameId}.mapNotNull{(_,xs)->xs.maxByOrNull{it.createdAt}}
         var a=0.0; var b=1.0
         if(rows.isNotEmpty()){
