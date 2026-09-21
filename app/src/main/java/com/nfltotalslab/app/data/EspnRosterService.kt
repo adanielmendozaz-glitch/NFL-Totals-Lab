@@ -355,7 +355,7 @@ class EspnRosterService {
 
     private fun normalizeName(raw:String)=raw.lowercase()
         .replace(Regex("[^a-z0-9 ]"),"")
-        .replace(Regex("\s+")," ")
+        .replace(Regex("\\s+")," ")
         .trim()
 
     private fun resolveTeamId(team:String):String?{
