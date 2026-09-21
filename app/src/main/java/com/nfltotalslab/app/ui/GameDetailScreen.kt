@@ -91,8 +91,8 @@ fun GameDetailScreen(
                     SectionTitle("DATOS BASE · MERCADO Y CONTEXTO")
                     SurfaceCard{
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                            SmallMetric("TOTAL",game.totalLine?.let{f1(it)} ?: "—",Modifier.weight(1f))
-                            SmallMetric("SPREAD",game.spreadLine?.let{f1(it)} ?: "—",Modifier.weight(1f))
+                            SmallMetric("TOTAL",game.totalLine?.let{fmt1(it)} ?: "—",Modifier.weight(1f))
+                            SmallMetric("SPREAD",game.spreadLine?.let{fmt1(it)} ?: "—",Modifier.weight(1f))
                             SmallMetric("ROOF",game.roof ?: "—",Modifier.weight(1f))
                         }
                         Spacer(Modifier.height(8.dp))
@@ -165,7 +165,7 @@ fun GameDetailScreen(
                                 ){
                                     Text(e.name,Modifier.weight(1f),color=DetailMuted,fontSize=10.sp)
                                     Text(
-                                        "μ ${f1(e.projection)} · $side ${(max(e.pOver,e.pUnder)*100).f1()}%",
+                                        "μ ${fmt1(e.projection)} · $side ${(max(e.pOver,e.pUnder)*100).f1()}%",
                                         color=DetailText,fontSize=10.sp,fontWeight=FontWeight.Bold
                                     )
                                 }
@@ -228,13 +228,13 @@ fun GameDetailScreen(
 
                         SurfaceCard{
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-                                SmallMetric("CORE μ",f1(p.projection),Modifier.weight(1f))
+                                SmallMetric("CORE μ",fmt1(p.projection),Modifier.weight(1f))
                                 SmallMetric("ROSTER Δ",signed1(intel.totalAdjustment),Modifier.weight(1f))
-                                SmallMetric("AJUSTADA μ",f1(adjProjection),Modifier.weight(1f))
+                                SmallMetric("AJUSTADA μ",fmt1(adjProjection),Modifier.weight(1f))
                             }
                             Spacer(Modifier.height(10.dp))
                             Text(
-                                "$adjPick ${f1(p.line)}",
+                                "$adjPick ${fmt1(p.line)}",
                                 color=if(adjPick==p.pick)DetailGreen else DetailAmber,
                                 fontSize=25.sp,fontWeight=FontWeight.Black
                             )
@@ -308,9 +308,9 @@ private fun CoreDecisionCard(p:Prediction){
     ){
         Column(Modifier.fillMaxWidth().padding(16.dp)){
             Text("FULL GAME · ${p.classification}",color=DetailMuted,fontSize=10.sp,fontWeight=FontWeight.Black)
-            Text("${p.pick} ${f1(p.line)}",color=DetailText,fontSize=28.sp,fontWeight=FontWeight.Black)
+            Text("${p.pick} ${fmt1(p.line)}",color=DetailText,fontSize=28.sp,fontWeight=FontWeight.Black)
             Text(
-                "${(p.probability*100).f1()}% · Proyección ${f1(p.projection)}",
+                "${(p.probability*100).f1()}% · Proyección ${fmt1(p.projection)}",
                 color=DetailGreen,fontSize=15.sp,fontWeight=FontWeight.Black
             )
             Text(
@@ -435,6 +435,6 @@ private fun engineDispersionLabel(p:Prediction):String{
     return when{range<4.0->"BAJA";range<8.0->"MEDIA";else->"ALTA"}
 }
 
-private fun f1(v:Double)=String.format(Locale.US,"%.1f",v)
+private fun fmt1(v:Double)=String.format(Locale.US,"%.1f",v)
 private fun Double.f1()=String.format(Locale.US,"%.1f",this)
 private fun signed1(v:Double)=String.format(Locale.US,"%+.1f",v)
