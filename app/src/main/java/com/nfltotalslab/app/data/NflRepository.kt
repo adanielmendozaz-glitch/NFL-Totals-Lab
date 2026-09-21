@@ -3,6 +3,7 @@ package com.nfltotalslab.app.data
 import com.nfltotalslab.app.model.ShadowLab
 import com.nfltotalslab.app.model.OpponentAdjustmentShadow
 import com.nfltotalslab.app.model.AdaptiveEnsembleShadow
+import com.nfltotalslab.app.model.RosterAdjustmentShadow
 import com.nfltotalslab.app.model.TotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
@@ -14,6 +15,7 @@ class NflRepository(
     private val api:NflverseService=NflverseService()
 ){
     private val engine=TotalsEngine(100_000)
+    private val rosterApi=EspnRosterService()
     private val modelVersion="0.9.0-integrity"
     private val deepCacheMs=4L*60L*60L*1000L
 
@@ -174,6 +176,18 @@ class NflRepository(
             lastSync=lastSync(),
             lastDeepSync=lastDeepSync()
         )
+
+    suspend fun rosterIntelligence(game:GameRecord,core:Prediction?):GameRosterIntelligence =
+        withContext(Dispatchers.IO){
+            val intel=rosterApi.fetchGameIntelligence(game)
+            if(core!=null && !game.finished && !KickoffGuard.isLocked(game)){
+                val shadow=RosterAdjustmentShadow.fromCore(core,intel)
+                if(!db.hasShadowPrediction(shadow.gameId,shadow.modelName,shadow.inputKey)){
+                    db.saveShadowPrediction(shadow)
+                }
+            }
+            intel
+        }
 
     fun addBet(p:Prediction,odds:Double=1.91,stake:Double=100.0){
         db.saveBet(BetRecord(predictionId=p.id,gameId=p.gameId,market="${p.pick} ${p.line}",odds=odds,stake=stake))

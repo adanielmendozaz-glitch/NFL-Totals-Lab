@@ -52,7 +52,7 @@ fun NflTotalsApp(context:Context){
     var bank by remember{mutableStateOf(repo.bank())}
     var syncing by remember{mutableStateOf(false)}
     var syncMsg by remember{mutableStateOf<String?>(null)}
-    var selected by remember{mutableStateOf<Prediction?>(null)}
+    var selectedGame by remember{mutableStateOf<GameRecord?>(null)}
     var liveEnabled by remember{mutableStateOf(false)}
     var liveLoading by remember{mutableStateOf(false)}
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
@@ -85,11 +85,11 @@ fun NflTotalsApp(context:Context){
     Scaffold(
         containerColor=Bg,
         topBar={
-            Column(Modifier.background(Bg).padding(horizontal=16.dp,vertical=10.dp)){
+            if(selectedGame==null) Column(Modifier.background(Bg).padding(horizontal=16.dp,vertical=10.dp)){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.9.1 · INTEGRITY ISOLATION",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.9.2 · ROSTER SHADOW",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -105,7 +105,7 @@ fun NflTotalsApp(context:Context){
             }
         },
         bottomBar={
-            Column(Modifier.background(Panel)){
+            if(selectedGame==null) Column(Modifier.background(Panel)){
                 if(main==MainTab.JORNADA && sub==SubTab.NONE) SubBar { sub=it }
                 NavigationBar(containerColor=Panel){
                     navItem(main==MainTab.JORNADA,"⌂","Jornada"){main=MainTab.JORNADA;sub=SubTab.NONE}
@@ -118,6 +118,35 @@ fun NflTotalsApp(context:Context){
     ){pad->
         Box(Modifier.fillMaxSize().padding(pad).background(Bg)){
             when{
+                selectedGame!=null->{
+                    val g=selectedGame!!
+                    val gamePreds=preds.filter{it.gameId==g.gameId}
+                    val p=gamePreds
+                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="0.9.0-integrity"}
+                        .maxByOrNull{it.createdAt}
+                        ?: gamePreds.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt}
+                        ?: gamePreds.maxByOrNull{it.createdAt}
+
+                    GameDetailScreen(
+                        game=g,
+                        prediction=p,
+                        onBack={selectedGame=null},
+                        onAnalyze={
+                            val np=repo.analyze(g)
+                            refresh()
+                            np
+                        },
+                        onLoadRoster={
+                            val intel=repo.rosterIntelligence(g,p)
+                            refresh()
+                            intel
+                        },
+                        onBet={pick->
+                            repo.addBet(pick)
+                            refresh()
+                        }
+                    )
+                }
                 sub==SubTab.CENSO->CensusScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
@@ -154,20 +183,14 @@ fun NflTotalsApp(context:Context){
                         }
                     },
                     onAnalyze={g->
-                        scope.launch{
-                            syncMsg="Simulando ${g.awayTeam} @ ${g.homeTeam}…"
-                            runCatching{repo.analyze(g)}.onSuccess{p->selected=p;refresh();syncMsg="Análisis guardado en Censo + Ranking"}.onFailure{syncMsg=it.message ?: "Análisis bloqueado"}
-                        }
+                        selectedGame=g
                     }
                 )
-                main==MainTab.RANKING->RankingScreen(preds,games){selected=it}
+                main==MainTab.RANKING->RankingScreen(preds,games){p->
+                    games.firstOrNull{it.gameId==p.gameId}?.let{selectedGame=it}
+                }
                 main==MainTab.EQUIPOS->TeamsScreen(metrics)
                 main==MainTab.AJUSTES->SettingsScreen(season,repo.lastSync(),onSeason={season=it;refresh()},onBuildVault={repo.exportDataVault(season)})
-            }
-            selected?.let{p->
-                PredictionDialog(p,onDismiss={selected=null},onBet={
-                    repo.addBet(p);refresh();selected=null
-                })
             }
         }
     }
@@ -233,7 +256,7 @@ private fun ScheduleScreen(
         Row(Modifier.padding(14.dp),verticalAlignment=Alignment.CenterVertically){
             Column(Modifier.weight(1f)){
                 Text("JORNADA · WEEK $week",color=Text,fontWeight=FontWeight.Black,fontSize=18.sp)
-                Text("${list.size} partidos · SYNC analiza jornada completa · toque = reanálisis manual",color=Muted,fontSize=11.sp)
+                Text("${list.size} partidos · SYNC analiza jornada completa · toque = detalle completo",color=Muted,fontSize=11.sp)
             }
             Button(onClick=onSync,enabled=!syncing,colors=ButtonDefaults.buttonColors(containerColor=Green)){
                 Text(if(syncing)"SYNC…" else "SINCRONIZAR",fontSize=10.sp,fontWeight=FontWeight.Black)
@@ -290,7 +313,7 @@ private fun GameCard(g:GameRecord,p:Prediction?,live:LiveGameState?,onClick:()->
     val awayScore=if(liveNow || live?.isFinal==true)live?.awayScore else g.awayScore
     val homeScore=if(liveNow || live?.isFinal==true)live?.homeScore else g.homeScore
     Surface(
-        modifier=Modifier.fillMaxWidth().clickable(enabled=!finalNow){onClick()},
+        modifier=Modifier.fillMaxWidth().clickable{onClick()},
         color=Card,shape=RoundedCornerShape(18.dp),
         border=androidx.compose.foundation.BorderStroke(
             1.dp,

@@ -230,3 +230,15 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Se muestran conteos de juegos con múltiples AUTO y post-kickoff inválidos.
 - Shadow comparison del Audit usa sólo la generación CURRENT.
 - Sin migración SQLite y sin cambio de pesos del Core.
+
+## V0.9.2 · Game Detail + Roster Shadow
+
+- Tap en partido abre pantalla completa de detalle; elimina el popup como flujo principal.
+- Mercado, contexto, Core, motores, consenso y dispersión.
+- Roster Intelligence usa ESPN depth chart + injury report actual.
+- Titulares, suplentes, OUT, doubtful, questionable y detalle de lesión.
+- Availability Score ofensivo/defensivo por equipo.
+- Roster Adjustment V1 calcula Shadow auditable de total/probabilidad.
+- Shadow NO modifica Core, Ranking, Calibration ni apuestas oficiales.
+- Se guarda en shadow_predictions y entra al Data Vault/Audit cuando se liquida.
+- No hay migración SQLite.
