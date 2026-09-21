@@ -251,3 +251,13 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Incomplete data shows dashes instead of fake 100/100 availability.
 - Incomplete roster cannot CONFIRM/CONTRADICT Core and creates no Shadow.
 - Core/Ranking/Calibration remain unchanged; no SQLite migration.
+
+
+## V0.9.2.2 · Depth Resolver
+
+- Resolves ESPN Core depth-chart athlete $ref records.
+- Uses roster athlete IDs first; unresolved refs are fetched from ESPN Core.
+- Converts http ESPN refs to https before requesting them.
+- Keeps Roster Quality Gate: incomplete depth remains NO CONCLUYENTE.
+- Core, Ranking, Calibration and official model weights remain unchanged.
+- No SQLite migration.

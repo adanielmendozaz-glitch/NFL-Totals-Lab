@@ -5,6 +5,7 @@ data class RosterPlayerState(
     val position:String,
     val unit:String,
     val depthRank:Int,
+    val athleteId:String = "",
     val injuryStatus:String = "",
     val injuryDetail:String = ""
 ){
@@ -16,6 +17,7 @@ data class RosterPlayerState(
         depthRank>3 && depthRank<90 -> "DEPTH $depthRank"
         else -> "ROSTER"
     }
+
     val unavailable:Boolean get() {
         val s=injuryStatus.uppercase()
         return s.contains("OUT") || s.contains("INJURED RESERVE") ||
