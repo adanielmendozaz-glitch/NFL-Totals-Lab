@@ -21,10 +21,11 @@ import java.util.Locale
 @Composable
 fun AuditScreen(snapshot:AuditSnapshot,onBack:()->Unit){
     val core=snapshot.core
+    val legacy=snapshot.legacyCore
     Column(Modifier.fillMaxSize()){
         AuditHeader(
-            "AUDIT LAB",
-            "ROI teórico @${snapshot.odds} · 1u por pick · solo registros liquidados.",
+            "AUDIT LAB · ISOLATED",
+            "CURRENT ${snapshot.currentVersion} separado de Legacy · sólo snapshots pre-kickoff.",
             onBack
         )
 
@@ -32,39 +33,52 @@ fun AuditScreen(snapshot:AuditSnapshot,onBack:()->Unit){
             Modifier.fillMaxSize().padding(horizontal=14.dp),
             verticalArrangement=Arrangement.spacedBy(8.dp)
         ){
+            item{AuditSectionTitle("CURRENT · generación limpia")}
             item{
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
                     AuditMetric("N",core.n.toString(),Modifier.weight(1f))
                     AuditMetric("HIT",core.hitRate?.times(100)?.f1()?.plus("%") ?: "—",Modifier.weight(1f))
-                    AuditMetric("ROI",core.roi?.times(100)?.f1()?.plus("%") ?: "—",Modifier.weight(1f),core.roi)
+                    AuditMetric("BRIER",core.brier?.f3() ?: "—",Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(7.dp))
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
-                    AuditMetric("BRIER",core.brier?.f3() ?: "—",Modifier.weight(1f))
-                    AuditMetric("ECE",snapshot.ece?.times(100)?.f1()?.plus(" pp") ?: "—",Modifier.weight(1f))
                     AuditMetric("W-L-P","${core.wins}-${core.losses}-${core.pushes}",Modifier.weight(1f))
+                    AuditMetric("ECE",snapshot.ece?.times(100)?.f1()?.plus(" pp") ?: "—",Modifier.weight(1f))
+                    AuditMetric("ROI*",core.roi?.times(100)?.f1()?.plus("%") ?: "—",Modifier.weight(1f),core.roi)
                 }
             }
 
-            item{AuditSectionTitle("CORE vs SHADOW · menor Brier es mejor")}
+            item{AuditSectionTitle("LEGACY · referencia histórica, NO entrena Current")}
+            item{AuditStatRow(legacy)}
+
+            item{AuditSectionTitle("INTEGRIDAD DE SNAPSHOTS")}
+            item{
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(7.dp)){
+                    AuditMetric("AUTO DUP",snapshot.duplicateAutoGames.toString(),Modifier.weight(1f))
+                    AuditMetric("POST-KICK",snapshot.invalidPostKickoff.toString(),Modifier.weight(1f))
+                    AuditMetric("AISLADO","SÍ",Modifier.weight(1f))
+                }
+            }
+
+            item{AuditSectionTitle("CURRENT CORE vs CURRENT SHADOW · menor Brier es mejor")}
             items(snapshot.modelComparison){AuditStatRow(it)}
 
-            item{AuditSectionTitle("PROBABILIDAD · calibración + rentabilidad")}
+            item{AuditSectionTitle("CURRENT · PROBABILIDAD")}
             items(snapshot.byProbability){AuditStatRow(it)}
 
-            item{AuditSectionTitle("MERCADO · OVER vs UNDER")}
+            item{AuditSectionTitle("CURRENT · OVER vs UNDER")}
             items(snapshot.byMarket){AuditStatRow(it)}
 
-            item{AuditSectionTitle("FILTRO · PASS / LEAN / JUGABLE")}
+            item{AuditSectionTitle("CURRENT · PASS / LEAN / JUGABLE")}
             items(snapshot.byClassification){AuditStatRow(it)}
 
-            item{AuditSectionTitle("EQUIPOS · el N importa")}
+            item{AuditSectionTitle("CURRENT · EQUIPOS")}
             items(snapshot.byTeam){AuditStatRow(it)}
 
             item{
                 Text(
-                    "Audit Lab observa; no cambia pesos ni promueve un Shadow automáticamente. " +
-                    "Con muestras pequeñas, ROI y hit rate pueden ser muy ruidosos.",
+                    "* ROI es teórico @${snapshot.odds}, 1u por pick. Legacy permanece visible para comparar, " +
+                    "pero no se mezcla con Current. AUTO posteriores al kickoff se excluyen del Audit oficial.",
                     color=MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize=9.sp,
                     modifier=Modifier.padding(vertical=10.dp)
@@ -76,10 +90,7 @@ fun AuditScreen(snapshot:AuditSnapshot,onBack:()->Unit){
 
 @Composable
 private fun AuditHeader(title:String,subtitle:String,onBack:()->Unit){
-    Row(
-        Modifier.fillMaxWidth().padding(14.dp),
-        verticalAlignment=Alignment.CenterVertically
-    ){
+    Row(Modifier.fillMaxWidth().padding(14.dp),verticalAlignment=Alignment.CenterVertically){
         OutlinedButton(onClick=onBack){Text("←")}
         Column(Modifier.padding(start=10.dp)){
             Text(title,fontWeight=FontWeight.Black,fontSize=20.sp)
@@ -89,12 +100,7 @@ private fun AuditHeader(title:String,subtitle:String,onBack:()->Unit){
 }
 
 @Composable
-private fun AuditMetric(
-    label:String,
-    value:String,
-    modifier:Modifier=Modifier,
-    signedValue:Double?=null
-){
+private fun AuditMetric(label:String,value:String,modifier:Modifier=Modifier,signedValue:Double?=null){
     val valueColor=when{
         signedValue==null->MaterialTheme.colorScheme.onSurface
         signedValue>0.0->MaterialTheme.colorScheme.primary
@@ -107,10 +113,7 @@ private fun AuditMetric(
         shape=RoundedCornerShape(12.dp),
         border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)
     ){
-        Column(
-            Modifier.padding(vertical=10.dp),
-            horizontalAlignment=Alignment.CenterHorizontally
-        ){
+        Column(Modifier.padding(vertical=10.dp),horizontalAlignment=Alignment.CenterHorizontally){
             Text(label,color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=8.sp,fontWeight=FontWeight.Black)
             Text(value,color=valueColor,fontSize=15.sp,fontWeight=FontWeight.Black)
         }
@@ -119,13 +122,8 @@ private fun AuditMetric(
 
 @Composable
 private fun AuditSectionTitle(text:String){
-    Text(
-        text,
-        color=MaterialTheme.colorScheme.onSurfaceVariant,
-        fontSize=10.sp,
-        fontWeight=FontWeight.Black,
-        modifier=Modifier.padding(top=7.dp,bottom=2.dp)
-    )
+    Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=10.sp,fontWeight=FontWeight.Black,
+        modifier=Modifier.padding(top=7.dp,bottom=2.dp))
 }
 
 @Composable
@@ -136,41 +134,26 @@ private fun AuditStatRow(x:AuditStat){
         x.roi<0.0->MaterialTheme.colorScheme.error
         else->MaterialTheme.colorScheme.onSurfaceVariant
     }
-
     Surface(
         Modifier.fillMaxWidth(),
         color=MaterialTheme.colorScheme.surfaceVariant.copy(alpha=.30f),
         shape=RoundedCornerShape(13.dp),
         border=BorderStroke(1.dp,MaterialTheme.colorScheme.outlineVariant)
     ){
-        Row(
-            Modifier.padding(11.dp),
-            verticalAlignment=Alignment.CenterVertically
-        ){
+        Row(Modifier.padding(11.dp),verticalAlignment=Alignment.CenterVertically){
             if(teamBrand(x.label).logoUrl!=null){
                 TeamBadge(x.label,24.dp)
                 Spacer(Modifier.width(8.dp))
             }
             Column(Modifier.weight(1f)){
                 Text(x.label,fontWeight=FontWeight.Black,fontSize=11.sp)
-                Text(
-                    "N ${x.n} · W-L-P ${x.wins}-${x.losses}-${x.pushes} · P̄ ${x.avgProbability?.times(100)?.f1() ?: "—"}%",
-                    color=MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize=9.sp
-                )
+                Text("N ${x.n} · W-L-P ${x.wins}-${x.losses}-${x.pushes} · P̄ ${x.avgProbability?.times(100)?.f1() ?: "—"}%",
+                    color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=9.sp)
             }
             Column(horizontalAlignment=Alignment.End){
-                Text(
-                    "Hit ${x.hitRate?.times(100)?.f1() ?: "—"}% · ROI ${x.roi?.times(100)?.f1() ?: "—"}%",
-                    color=roiColor,
-                    fontWeight=FontWeight.Bold,
-                    fontSize=9.sp
-                )
-                Text(
-                    "Brier ${x.brier?.f3() ?: "—"}",
-                    color=MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize=9.sp
-                )
+                Text("Hit ${x.hitRate?.times(100)?.f1() ?: "—"}% · ROI ${x.roi?.times(100)?.f1() ?: "—"}%",
+                    color=roiColor,fontWeight=FontWeight.Bold,fontSize=9.sp)
+                Text("Brier ${x.brier?.f3() ?: "—"}",color=MaterialTheme.colorScheme.onSurfaceVariant,fontSize=9.sp)
             }
         }
     }

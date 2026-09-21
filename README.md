@@ -219,3 +219,14 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Muestra temprana (<3 juegos/equipo) limita confianza a LEAN/PASS.
 - Sin migración SQLite.
 - No se cambian todavía los pesos oficiales del Core: primero exportamos y backtesteamos.
+
+## V0.9.1 · Integrity Isolation
+
+- Adaptive Ensemble aprende únicamente de Shadows de la misma modelVersion.
+- Legacy 0.4 deja de entrenar Adaptive 0.9.0-integrity.
+- Audit separa CURRENT y LEGACY.
+- Audit selecciona el último AUTO válido antes del kickoff.
+- AUTO posteriores al kickoff se excluyen del Audit oficial.
+- Se muestran conteos de juegos con múltiples AUTO y post-kickoff inválidos.
+- Shadow comparison del Audit usa sólo la generación CURRENT.
+- Sin migración SQLite y sin cambio de pesos del Core.

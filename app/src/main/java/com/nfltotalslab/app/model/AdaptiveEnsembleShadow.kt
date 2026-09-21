@@ -22,7 +22,11 @@ object AdaptiveEnsembleShadow {
         if (!baseWeights.keys.all { it in current }) return null
 
         val settledLatest = history
-            .filter { it.modelName in baseWeights.keys && (it.result == "WIN" || it.result == "LOSS") }
+            .filter {
+                it.modelName in baseWeights.keys &&
+                (it.result == "WIN" || it.result == "LOSS") &&
+                it.inputKey.startsWith("${core.modelVersion}|")
+            }
             .groupBy { "${it.gameId}|${it.modelName}" }
             .mapNotNull { (_, rows) -> rows.maxByOrNull { it.createdAt } }
 

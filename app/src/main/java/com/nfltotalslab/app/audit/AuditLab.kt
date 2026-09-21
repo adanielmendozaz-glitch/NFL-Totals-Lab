@@ -1,7 +1,12 @@
 package com.nfltotalslab.app.audit
 
+import com.nfltotalslab.app.data.GameRecord
 import com.nfltotalslab.app.data.Prediction
 import com.nfltotalslab.app.data.ShadowPrediction
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
 data class AuditStat(
@@ -18,13 +23,17 @@ data class AuditStat(
 
 data class AuditSnapshot(
     val odds:Double,
+    val currentVersion:String,
     val core:AuditStat,
+    val legacyCore:AuditStat,
     val ece:Double?,
     val modelComparison:List<AuditStat>,
     val byProbability:List<AuditStat>,
     val byMarket:List<AuditStat>,
     val byClassification:List<AuditStat>,
-    val byTeam:List<AuditStat>
+    val byTeam:List<AuditStat>,
+    val invalidPostKickoff:Int,
+    val duplicateAutoGames:Int
 )
 
 private data class Obs(
@@ -38,15 +47,42 @@ private data class Obs(
 )
 
 object AuditLab {
+    private val eastern=ZoneId.of("America/New_York")
+    private val timeFormats=listOf(
+        DateTimeFormatter.ofPattern("H:mm"),
+        DateTimeFormatter.ofPattern("HH:mm")
+    )
+
     fun build(
         predictions:List<Prediction>,
         shadows:List<ShadowPrediction>,
+        games:List<GameRecord>,
+        currentVersion:String="0.9.0-integrity",
         odds:Double=1.91
     ):AuditSnapshot{
-        val coreRows=predictions
-            .filter{it.analysisSource=="AUTO_CENSUS" && it.result in setOf("WIN","LOSS","PUSH")}
-            .groupBy{it.gameId}
-            .mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}
+        val gameMap=games.associateBy{it.gameId}
+        val autos=predictions.filter{it.analysisSource=="AUTO_CENSUS"}
+
+        val duplicateAutoGames=autos.groupBy{it.gameId}.count{it.value.size>1}
+        val invalidPostKickoff=autos.count{p->
+            val kickoff=gameMap[p.gameId]?.let{kickoffEpochMs(it)}
+            kickoff!=null && p.createdAt>kickoff
+        }
+
+        fun officialFor(versionMatch:(Prediction)->Boolean):List<Prediction> =
+            autos.filter(versionMatch)
+                .groupBy{it.gameId}
+                .mapNotNull{(gameId,rows)->
+                    val kickoff=gameMap[gameId]?.let{kickoffEpochMs(it)}
+                    val valid=if(kickoff==null) rows else rows.filter{it.createdAt<=kickoff}
+                    valid.maxByOrNull{it.createdAt}
+                }
+
+        val currentOfficial=officialFor{it.modelVersion==currentVersion}
+        val legacyOfficial=officialFor{it.modelVersion!=currentVersion}
+
+        fun toObs(rows:List<Prediction>):List<Obs> = rows
+            .filter{it.result in setOf("WIN","LOSS","PUSH")}
             .map{
                 Obs(
                     gameId=it.gameId,
@@ -59,7 +95,10 @@ object AuditLab {
                 )
             }
 
-        val core=stats("CORE ENSEMBLE",coreRows,odds)
+        val coreRows=toObs(currentOfficial)
+        val legacyRows=toObs(legacyOfficial)
+        val core=stats("CORE CURRENT",coreRows,odds)
+        val legacyCore=stats("CORE LEGACY",legacyRows,odds)
 
         val probabilitySpecs=listOf(
             Triple("50–54.9%",.50,.55),
@@ -82,7 +121,6 @@ object AuditLab {
         val byMarket=listOf("OVER","UNDER").map{side->
             stats(side,coreRows.filter{it.pick==side},odds)
         }
-
         val byClassification=listOf("PASS","LEAN","JUGABLE").map{c->
             stats(c,coreRows.filter{it.classification==c},odds)
         }
@@ -90,29 +128,20 @@ object AuditLab {
         val teams=coreRows.flatMap{listOf(it.awayTeam,it.homeTeam)}.distinct().sorted()
         val byTeam=teams.map{team->
             stats(team,coreRows.filter{it.awayTeam==team || it.homeTeam==team},odds)
-        }.sortedWith(
-            compareByDescending<AuditStat>{it.n}
-                .thenByDescending{it.roi ?: Double.NEGATIVE_INFINITY}
-        )
+        }.sortedWith(compareByDescending<AuditStat>{it.n}.thenByDescending{it.roi ?: Double.NEGATIVE_INFINITY})
 
         val shadowLatest=shadows
-            .filter{it.result in setOf("WIN","LOSS","PUSH")}
+            .filter{
+                it.result in setOf("WIN","LOSS","PUSH") &&
+                it.inputKey.startsWith("$currentVersion|")
+            }
             .groupBy{"${it.gameId}|${it.modelName}"}
             .mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}
 
         val shadowModels=shadowLatest.groupBy{it.modelName}.map{(name,rows)->
-            val obs=rows.map{
-                Obs(
-                    gameId=it.gameId,
-                    probability=it.probability,
-                    result=it.result ?: "PUSH",
-                    pick=it.pick,
-                    classification="SHADOW",
-                    awayTeam=it.awayTeam,
-                    homeTeam=it.homeTeam
-                )
-            }
-            stats(name,obs,odds)
+            stats(name,rows.map{
+                Obs(it.gameId,it.probability,it.result ?: "PUSH",it.pick,"SHADOW",it.awayTeam,it.homeTeam)
+            },odds)
         }
 
         val modelComparison=(listOf(core)+shadowModels).sortedWith(
@@ -122,14 +151,28 @@ object AuditLab {
 
         return AuditSnapshot(
             odds=odds,
+            currentVersion=currentVersion,
             core=core,
+            legacyCore=legacyCore,
             ece=ece,
             modelComparison=modelComparison,
             byProbability=byProbability,
             byMarket=byMarket,
             byClassification=byClassification,
-            byTeam=byTeam
+            byTeam=byTeam,
+            invalidPostKickoff=invalidPostKickoff,
+            duplicateAutoGames=duplicateAutoGames
         )
+    }
+
+    private fun kickoffEpochMs(game:GameRecord):Long?{
+        val day=runCatching{LocalDate.parse(game.gameDay)}.getOrNull() ?: return null
+        var time:LocalTime?=null
+        for(f in timeFormats){
+            time=runCatching{LocalTime.parse(game.gameTime,f)}.getOrNull()
+            if(time!=null)break
+        }
+        return time?.let{day.atTime(it).atZone(eastern).toInstant().toEpochMilli()}
     }
 
     private fun stats(label:String,rows:List<Obs>,odds:Double):AuditStat{
@@ -138,7 +181,6 @@ object AuditLab {
         val pushes=rows.count{it.result=="PUSH"}
         val decisions=wins+losses
         val n=rows.size
-
         val hit=if(decisions==0)null else wins.toDouble()/decisions
         val roi=if(n==0)null else (wins*(odds-1.0)-losses)/n
         val decisionRows=rows.filter{it.result=="WIN"||it.result=="LOSS"}
@@ -148,7 +190,6 @@ object AuditLab {
             e*e
         }.average()
         val avgP=if(decisionRows.isEmpty())null else decisionRows.map{it.probability}.average()
-
         return AuditStat(label,n,wins,losses,pushes,hit,roi,brier,avgP)
     }
 

@@ -89,7 +89,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.9.0 · AUDIT FOUNDATION",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.9.1 · INTEGRITY ISOLATION",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -121,7 +121,7 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.CENSO->CensusScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
-                sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows)){sub=SubTab.NONE}
+                sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows,games)){sub=SubTab.NONE}
                 sub==SubTab.APUESTAS->BetsPortfolioScreen(bets,preds,bank){sub=SubTab.NONE}
                 sub==SubTab.BANK->BankPortfolioScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
@@ -1532,7 +1532,7 @@ private fun SettingsScreen(
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("APRENDIZAJE SHADOW",color=Muted,fontSize=10.sp)
                 Text("Adaptive Ensemble",fontWeight=FontWeight.Black,fontSize=13.sp,color=Blue)
-                Text("Aprende pesos con Brier de FINALs previos. Parte de 30/25/20/15/10 y usa shrinkage N/(N+32). No modifica el Core.",color=Muted,fontSize=10.sp)
+                Text("Aprende sólo con FINALs de la MISMA generación del Core. Legacy 0.4 queda aislado. No modifica el Core.",color=Muted,fontSize=10.sp)
 
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
