@@ -197,7 +197,7 @@ fun GameDetailScreen(
                         rosterError!=null->SurfaceCard{
                             Text("Roster no disponible: $rosterError",color=DetailRed,fontSize=10.sp)
                             Spacer(Modifier.height(8.dp))
-                            OutlinedButton(onClick={loadRoster}){Text("REINTENTAR")}
+                            OutlinedButton(onClick={loadRoster()}){Text("REINTENTAR")}
                         }
                         roster!=null->{
                             val intel=roster!!
@@ -206,7 +206,7 @@ fun GameDetailScreen(
                                 TeamRosterCard(intel.home,homeExpanded){homeExpanded=!homeExpanded}
                             }
                         }
-                        else->SurfaceCard{OutlinedButton(onClick={loadRoster}){Text("CARGAR ROSTER")}}
+                        else->SurfaceCard{OutlinedButton(onClick={loadRoster()}){Text("CARGAR ROSTER")}}
                     }
                 }
 
