@@ -422,7 +422,12 @@ private fun TeamRosterCard(team:TeamRosterIntelligence,expanded:Boolean,onToggle
             }else{
                 if(!team.depthLoaded){
                     Text(
-                        "Roster visible como referencia, pero sin depth suficiente NO se asume titularidad/suplencia ni se calcula impacto.",
+                        "Núcleo parcial visible. El Gate exige 11 ofensivos + 11 defensivos únicos antes de calcular impacto.",
+                        color=DetailAmber,fontSize=8.sp,modifier=Modifier.padding(top=7.dp)
+                    )
+                }else if(!team.injuriesLoaded){
+                    Text(
+                        "Depth normalizado, pero Injury Resolver no está validado; no se calcula impacto.",
                         color=DetailAmber,fontSize=8.sp,modifier=Modifier.padding(top=7.dp)
                     )
                 }

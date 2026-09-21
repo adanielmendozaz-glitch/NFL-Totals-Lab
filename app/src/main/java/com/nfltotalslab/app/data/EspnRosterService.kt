@@ -36,6 +36,13 @@ class EspnRosterService {
         val schemaRecognized:Boolean
     )
 
+    private data class InjuryFetchResult(
+        val parsed:InjuryParseResult,
+        val endpointOk:Boolean,
+        val source:String
+    )
+
+
 
     private data class AthleteIdentity(
         val id:String,
@@ -86,7 +93,7 @@ class EspnRosterService {
             reliability=reliability,
             decisionReady=decisionReady,
             qualityReason=reason,
-            source="ESPN Site/Core depth + athlete-ref resolver + roster + injuries",
+            source="ESPN depth + Unique Core 11+11 + Current Injury Resolver",
             fingerprint=fingerprint
         )
     }
@@ -136,23 +143,18 @@ class EspnRosterService {
                 else->emptyList()
             }
 
-            val injuryResult=runCatching{
-                JSONObject(readAll(
-                    "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/$id/injuries"
-                ))
-            }
-
-            val injuryParsed=if(injuryResult.isSuccess){
-                parseInjuries(injuryResult.getOrThrow(),rosterById)
-            }else{
-                InjuryParseResult(emptyMap(),0,0,false)
-            }
+            val injuryFetch=fetchCurrentInjuries(
+                teamId=id,
+                teamAbbr=team,
+                rosterById=rosterById
+            )
+            val injuryParsed=injuryFetch.parsed
 
             val parseRatio=if(injuryParsed.rawCount==0)1.0
                 else injuryParsed.parsedCount.toDouble()/injuryParsed.rawCount.toDouble()
 
             val injuriesValid=
-                injuryResult.isSuccess &&
+                injuryFetch.endpointOk &&
                 injuryParsed.schemaRecognized &&
                 (
                     injuryParsed.rawCount==0 ||
@@ -160,11 +162,15 @@ class EspnRosterService {
                 )
 
             val injuryState=when{
-                injuryResult.isFailure -> "ENDPOINT ERROR"
-                !injuryParsed.schemaRecognized -> "SCHEMA NO RECONOCIDO"
-                injuryParsed.rawCount==0 -> "VALID EMPTY 0/0"
-                injuriesValid -> "VALID ${injuryParsed.parsedCount}/${injuryParsed.rawCount}"
-                else -> "PARTIAL ${injuryParsed.parsedCount}/${injuryParsed.rawCount}"
+                !injuryFetch.endpointOk -> "ENDPOINT ERROR"
+                !injuryParsed.schemaRecognized ->
+                    "${injuryFetch.source} · SCHEMA NO RECONOCIDO"
+                injuryParsed.rawCount==0 ->
+                    "${injuryFetch.source} · VALID EMPTY 0/0"
+                injuriesValid ->
+                    "${injuryFetch.source} · VALID ${injuryParsed.parsedCount}/${injuryParsed.rawCount}"
+                else ->
+                    "${injuryFetch.source} · PARTIAL ${injuryParsed.parsedCount}/${injuryParsed.rawCount}"
             }
 
             val injuries=injuryParsed.items
@@ -202,8 +208,8 @@ class EspnRosterService {
 
             val depthLoaded=
                 depthPlayers.isNotEmpty() &&
-                offenseCore>=10 &&
-                defenseCore>=10
+                offenseCore==11 &&
+                defenseCore==11
 
             val dataReady=depthLoaded && injuriesValid
             val offense=if(dataReady)normalized.filter{it.unit=="OFFENSE"} else emptyList()
@@ -248,7 +254,7 @@ class EspnRosterService {
                 else 0,
                 depthLoaded=depthLoaded,
                 injuriesLoaded=injuriesValid,
-                injuryEndpointOk=injuryResult.isSuccess,
+                injuryEndpointOk=injuryFetch.endpointOk,
                 injurySchemaOk=injuryParsed.schemaRecognized,
                 injuryRawCount=injuryParsed.rawCount,
                 injuryParsedCount=injuryParsed.parsedCount,
@@ -308,7 +314,13 @@ class EspnRosterService {
         }
         fillUnit(rankOne,selected,"DEFENSE",11)
 
-        return players.map{p->p.copy(coreStarter=starterKey(p) in selected)}
+        val used=mutableSetOf<String>()
+        return players.map{p->
+            val key=starterKey(p)
+            val eligible=p.unit=="OFFENSE" || p.unit=="DEFENSE"
+            val isCore=eligible && key in selected && used.add(key)
+            p.copy(coreStarter=isCore)
+        }
     }
 
     private fun fillUnit(
@@ -586,6 +598,110 @@ class EspnRosterService {
         }
     }
 
+    private suspend fun fetchCurrentInjuries(
+        teamId:String,
+        teamAbbr:String,
+        rosterById:Map<String,RosterPlayerState>
+    ):InjuryFetchResult{
+        var teamAttempt:InjuryFetchResult?=null
+
+        val teamResult=runCatching{
+            JSONObject(readAll(
+                "https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/$teamId/injuries"
+            ))
+        }
+
+        if(teamResult.isSuccess){
+            val parsed=runCatching{
+                parseInjuries(teamResult.getOrThrow(),rosterById)
+            }.getOrElse{
+                InjuryParseResult(emptyMap(),0,0,false)
+            }
+
+            teamAttempt=InjuryFetchResult(
+                parsed=parsed,
+                endpointOk=true,
+                source="TEAM SITE"
+            )
+
+            if(isValidInjuryParse(parsed)){
+                return teamAttempt
+            }
+        }
+
+        val leagueResult=runCatching{
+            JSONObject(readAll(
+                "https://site.api.espn.com/apis/site/v2/sports/football/nfl/injuries"
+            ))
+        }
+
+        if(leagueResult.isSuccess){
+            val root=leagueResult.getOrThrow()
+            val groups=root.optJSONArray("injuries")
+
+            if(groups!=null){
+                var matched:JSONObject?=null
+
+                for(i in 0 until groups.length()){
+                    val group=groups.optJSONObject(i) ?: continue
+                    val t=group.optJSONObject("team")
+                    val id=t?.optString("id","").orEmpty()
+                    val abbr=t?.optString("abbreviation","").orEmpty()
+
+                    val sameTeam=
+                        (id.isNotBlank() && id==teamId) ||
+                        (
+                            abbr.isNotBlank() &&
+                            normalizeTeam(abbr)==normalizeTeam(teamAbbr)
+                        )
+
+                    if(sameTeam){
+                        matched=group
+                        break
+                    }
+                }
+
+                if(matched==null){
+                    return InjuryFetchResult(
+                        parsed=InjuryParseResult(
+                            items=emptyMap(),
+                            rawCount=0,
+                            parsedCount=0,
+                            schemaRecognized=true
+                        ),
+                        endpointOk=true,
+                        source="LEAGUE SITE"
+                    )
+                }
+
+                val parsed=runCatching{
+                    parseInjuries(matched,rosterById)
+                }.getOrElse{
+                    InjuryParseResult(emptyMap(),0,0,false)
+                }
+
+                return InjuryFetchResult(
+                    parsed=parsed,
+                    endpointOk=true,
+                    source="LEAGUE SITE"
+                )
+            }
+        }
+
+        return teamAttempt ?: InjuryFetchResult(
+            parsed=InjuryParseResult(emptyMap(),0,0,false),
+            endpointOk=false,
+            source="NONE"
+        )
+    }
+
+    private fun isValidInjuryParse(p:InjuryParseResult):Boolean{
+        if(!p.schemaRecognized)return false
+        if(p.rawCount==0)return true
+        val ratio=p.parsedCount.toDouble()/p.rawCount.toDouble()
+        return p.parsedCount>0 && ratio>=.60
+    }
+
     private suspend fun parseInjuries(
         root:JSONObject,
         rosterById:Map<String,RosterPlayerState>
@@ -858,7 +974,7 @@ class EspnRosterService {
             instanceFollowRedirects=true
             setRequestProperty(
                 "User-Agent",
-                "NFL-Totals-Lab-Android/0.9.2.3"
+                "NFL-Totals-Lab-Android/0.9.2.4"
             )
             connect()
 

@@ -271,3 +271,12 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Extra package starters no longer count as independent core starters.
 - Zero roster adjustment is NEUTRAL, not CONFIRMS.
 - Invalid injury parsing blocks Roster Shadow. No SQLite migration.
+
+
+## V0.9.2.4 · Injury Resolver + Unique Core
+
+- Current injuries: team Site endpoint with league-wide Site fallback filtered by team.
+- Core historical injury feed is not allowed into the decision gate.
+- Starter rows are deduplicated by athlete identity; nucleus can never exceed 22.
+- Gate READY requires exactly 11 offense + 11 defense unique starters.
+- Core/Ranking/Calibration remain unchanged. No SQLite migration.
