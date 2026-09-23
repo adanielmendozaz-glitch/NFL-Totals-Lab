@@ -4,6 +4,7 @@ import com.nfltotalslab.app.model.ShadowLab
 import com.nfltotalslab.app.model.OpponentAdjustmentShadow
 import com.nfltotalslab.app.model.AdaptiveEnsembleShadow
 import com.nfltotalslab.app.model.RosterAdjustmentShadow
+import com.nfltotalslab.app.model.MatchupScoreLab
 import com.nfltotalslab.app.model.TotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
@@ -28,6 +29,7 @@ class NflRepository(
         db.settleShadowPredictions(schedule)
         db.settleCalibrationSnapshots(schedule)
         db.settleMatchupSnapshots(schedule)
+        db.settleMatchupScoreCensus(schedule)
         val settledBets=settlePendingBets(db)
         db.putKv("last_sync",System.currentTimeMillis().toString())
 
@@ -127,6 +129,9 @@ class NflRepository(
 
         val auto=autoCensus(schedule,metrics,week,blocked)
         val matchupSnapshots=ensureMatchupSnapshots(schedule,matchupFeatures,week,blocked)
+        val matchupScore=ensureMatchupScoreCensus(
+            schedule,metrics,matchupFeatures,week,blocked
+        )
         val calibration=rollCalibration(schedule,week,blocked)
         val shadow=ensureShadowCensus(schedule,metrics,week,blocked)
 
@@ -135,7 +140,7 @@ class NflRepository(
             pbpTeams=pbpTeams,
             rosterPlayers=rosterRows,
             injuryRows=injuryRows,
-            message="DEEP ✓ · $source · FEAT $matchupDataSource ${matchupFeatures.size} · SNAP $matchupSnapshots · AUTO $auto · CAL↻ $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
+            message="DEEP ✓ · $source · FEAT $matchupDataSource ${matchupFeatures.size} · SNAP $matchupSnapshots · MATCHUP $matchupScore · AUTO $auto · CAL↻ $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
             autoAnalyzed=auto,
             activeWeek=week
         )
@@ -150,6 +155,7 @@ class NflRepository(
             db.settleShadowPredictions(updated)
             db.settleCalibrationSnapshots(updated)
             db.settleMatchupSnapshots(updated)
+            db.settleMatchupScoreCensus(updated)
 
             // Nuevo FINAL -> recalibra juegos posteriores todavía pregame.
             // KickoffGuard impide modificar partidos ya iniciados.
@@ -167,6 +173,7 @@ class NflRepository(
     fun calibrations()=db.loadCalibrationSnapshots()
     fun matchupFeatures(season:Int)=db.loadMatchupFeatures(season)
     fun matchupSnapshots()=db.loadMatchupSnapshots()
+    fun matchupScoreCensus()=db.loadMatchupScoreCensus()
     fun calibrationState()=ProgressiveCalibrator.fit(db.loadPredictions())
     fun bets()=db.loadBets()
     fun bank()=db.loadBank()
@@ -197,6 +204,7 @@ class NflRepository(
             calibrations=db.loadCalibrationSnapshots(),
             matchupFeatures=db.loadMatchupFeatures(season),
             matchupSnapshots=db.loadMatchupSnapshots(),
+            matchupScores=db.loadMatchupScoreCensus(),
             bets=db.loadBets(),
             bank=db.loadBank(),
             lastSync=lastSync(),
@@ -415,6 +423,49 @@ class NflRepository(
             }
         }
         count
+    }
+
+    private fun ensureMatchupScoreCensus(
+        schedule:List<GameRecord>,
+        metrics:List<TeamMetrics>,
+        features:List<MatchupFeature>,
+        week:Int?,
+        blocked:Set<String>
+    ):Int{
+        if(week==null)return 0
+
+        val history=db.loadMatchupScoreCensus()
+        val candidates=schedule.filter{
+            it.gameType=="REG" &&
+            it.week==week &&
+            !it.finished &&
+            it.totalLine!=null &&
+            !KickoffGuard.isLocked(it) &&
+            "${it.awayTeam}@${it.homeTeam}" !in blocked
+        }
+
+        var count=0
+        candidates.forEach{game->
+            if(db.hasMatchupScoreCensus(game.gameId))return@forEach
+
+            val score=MatchupScoreLab.build(
+                game=game,
+                metrics=metrics,
+                features=features,
+                schedule=schedule,
+                history=history
+            ) ?: return@forEach
+
+            db.saveMatchupScoreCensus(score)
+
+            val shadow=MatchupScoreLab.toShadow(score)
+            if(!db.hasShadowPrediction(shadow.gameId,shadow.modelName,shadow.inputKey)){
+                db.saveShadowPrediction(shadow)
+            }
+
+            count++
+        }
+        return count
     }
 
     private fun ensureMatchupSnapshots(

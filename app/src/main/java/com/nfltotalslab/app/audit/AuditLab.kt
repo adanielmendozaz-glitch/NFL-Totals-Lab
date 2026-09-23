@@ -3,6 +3,8 @@ package com.nfltotalslab.app.audit
 import com.nfltotalslab.app.data.GameRecord
 import com.nfltotalslab.app.data.Prediction
 import com.nfltotalslab.app.data.ShadowPrediction
+import com.nfltotalslab.app.data.MatchupScoreCensus
+import com.nfltotalslab.app.data.MatchupScoreAudit
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
@@ -33,7 +35,8 @@ data class AuditSnapshot(
     val byClassification:List<AuditStat>,
     val byTeam:List<AuditStat>,
     val invalidPostKickoff:Int,
-    val duplicateAutoGames:Int
+    val duplicateAutoGames:Int,
+    val matchupScore:MatchupScoreAudit
 )
 
 private data class Obs(
@@ -57,6 +60,7 @@ object AuditLab {
         predictions:List<Prediction>,
         shadows:List<ShadowPrediction>,
         games:List<GameRecord>,
+        matchupScores:List<MatchupScoreCensus> = emptyList(),
         currentVersion:String="0.9.0-integrity",
         odds:Double=1.91
     ):AuditSnapshot{
@@ -80,6 +84,53 @@ object AuditLab {
 
         val currentOfficial=officialFor{it.modelVersion==currentVersion}
         val legacyOfficial=officialFor{it.modelVersion!=currentVersion}
+
+        val matchupSettled=matchupScores.filter{
+            it.finalAway!=null && it.finalHome!=null
+        }
+
+        val matchupScoreAudit=if(matchupSettled.isEmpty()){
+            MatchupScoreAudit(
+                n=0,
+                totalMae=null,
+                teamMae=null,
+                awayMae=null,
+                homeMae=null,
+                totalBias=null,
+                disagreementN=0,
+                coreWinsWhenDisagree=0,
+                matchupWinsWhenDisagree=0
+            )
+        }else{
+            val totalErrors=matchupSettled.map{
+                (it.finalAway!!+it.finalHome!!).toDouble()-it.totalProjection
+            }
+            val awayErrors=matchupSettled.map{
+                it.finalAway!!.toDouble()-it.awayProjection
+            }
+            val homeErrors=matchupSettled.map{
+                it.finalHome!!.toDouble()-it.homeProjection
+            }
+
+            val coreByGame=currentOfficial.associateBy{it.gameId}
+            val disagreements=matchupSettled.filter{x->
+                coreByGame[x.gameId]?.pick?.let{it!=x.pick}==true
+            }
+
+            MatchupScoreAudit(
+                n=matchupSettled.size,
+                totalMae=totalErrors.map{kotlin.math.abs(it)}.average(),
+                teamMae=(awayErrors.map{kotlin.math.abs(it)}+homeErrors.map{kotlin.math.abs(it)}).average(),
+                awayMae=awayErrors.map{kotlin.math.abs(it)}.average(),
+                homeMae=homeErrors.map{kotlin.math.abs(it)}.average(),
+                totalBias=totalErrors.average(),
+                disagreementN=disagreements.size,
+                coreWinsWhenDisagree=disagreements.count{x->
+                    coreByGame[x.gameId]?.result=="WIN"
+                },
+                matchupWinsWhenDisagree=disagreements.count{it.result=="WIN"}
+            )
+        }
 
         fun toObs(rows:List<Prediction>):List<Obs> = rows
             .filter{it.result in setOf("WIN","LOSS","PUSH")}
@@ -161,7 +212,8 @@ object AuditLab {
             byClassification=byClassification,
             byTeam=byTeam,
             invalidPostKickoff=invalidPostKickoff,
-            duplicateAutoGames=duplicateAutoGames
+            duplicateAutoGames=duplicateAutoGames,
+            matchupScore=matchupScoreAudit
         )
     }
 

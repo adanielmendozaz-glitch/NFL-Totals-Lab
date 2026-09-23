@@ -63,6 +63,70 @@ fun AuditScreen(snapshot:AuditSnapshot,onBack:()->Unit){
             item{AuditSectionTitle("CURRENT CORE vs CURRENT SHADOW · menor Brier es mejor")}
             items(snapshot.modelComparison){AuditStatRow(it)}
 
+            item{AuditSectionTitle("MATCHUP TEAM SCORE LAB · error de puntos")}
+            item{
+                val m=snapshot.matchupScore
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement=Arrangement.spacedBy(7.dp)
+                ){
+                    AuditMetric("N",m.n.toString(),Modifier.weight(1f))
+                    AuditMetric(
+                        "TOTAL MAE",
+                        m.totalMae?.f1()?.plus(" pts") ?: "—",
+                        Modifier.weight(1f)
+                    )
+                    AuditMetric(
+                        "TEAM MAE",
+                        m.teamMae?.f1()?.plus(" pts") ?: "—",
+                        Modifier.weight(1f)
+                    )
+                }
+                Spacer(Modifier.height(7.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement=Arrangement.spacedBy(7.dp)
+                ){
+                    AuditMetric(
+                        "AWAY MAE",
+                        m.awayMae?.f1()?.plus(" pts") ?: "—",
+                        Modifier.weight(1f)
+                    )
+                    AuditMetric(
+                        "HOME MAE",
+                        m.homeMae?.f1()?.plus(" pts") ?: "—",
+                        Modifier.weight(1f)
+                    )
+                    AuditMetric(
+                        "BIAS TOTAL",
+                        m.totalBias?.f1()?.plus(" pts") ?: "—",
+                        Modifier.weight(1f),
+                        m.totalBias
+                    )
+                }
+            }
+
+            item{AuditSectionTitle("CORE vs MATCHUP · sólo cuando contradicen")}
+            item{
+                val m=snapshot.matchupScore
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement=Arrangement.spacedBy(7.dp)
+                ){
+                    AuditMetric("N",m.disagreementN.toString(),Modifier.weight(1f))
+                    AuditMetric(
+                        "CORE W",
+                        m.coreWinsWhenDisagree.toString(),
+                        Modifier.weight(1f)
+                    )
+                    AuditMetric(
+                        "MATCHUP W",
+                        m.matchupWinsWhenDisagree.toString(),
+                        Modifier.weight(1f)
+                    )
+                }
+            }
+
             item{AuditSectionTitle("CURRENT · PROBABILIDAD")}
             items(snapshot.byProbability){AuditStatRow(it)}
 

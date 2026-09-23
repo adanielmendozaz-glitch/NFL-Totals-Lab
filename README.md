@@ -291,3 +291,15 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - DB6 adds matchup_team_features and pre-kickoff matchup_feature_snapshots.
 - Data Vault V2 exports matchup_features and matchup_snapshots.
 - Matchup Intelligence is CAPTURE ONLY in V0.9.3 and cannot change official picks.
+
+
+## V0.9.4 · Matchup Shadow + Team Score Lab
+
+- Adds immutable pre-kickoff Matchup Score Census (DB7).
+- Projects away/home points independently from Core projection and market total.
+- Only after team scores exist does Matchup Shadow V1 compare their sum with O/U.
+- Matchup Shadow V1 is stored in the existing Shadow table for direct Audit comparison.
+- Audit adds away/home Team MAE, Total MAE, total bias and Core-vs-Matchup disagreement tracking.
+- Residual learning uses only settled earlier-week Matchup Score games, with shrinkage and +/-2.5 point caps.
+- Data Vault V3 exports matchup_score_census, finals and residual errors.
+- Official Core remains 0.9.0-integrity and is never changed by this layer.

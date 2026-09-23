@@ -36,6 +36,7 @@ fun GameDetailScreen(
     game:GameRecord,
     prediction:Prediction?,
     matchupFeatures:List<MatchupFeature>,
+    matchupScore:MatchupScoreCensus?,
     onBack:()->Unit,
     onAnalyze:suspend()->Prediction,
     onLoadRoster:suspend()->GameRosterIntelligence,
@@ -191,6 +192,11 @@ fun GameDetailScreen(
                 }
 
                 item{
+                    SectionTitle("MATCHUP SHADOW V1 · TEAM SCORE LAB")
+                    MatchupScorePanel(game,matchupScore)
+                }
+
+                item{
                     SectionTitle("ROSTER INTELLIGENCE · TITULARES, SUPLENTES Y BAJAS")
                     when{
                         rosterLoading->SurfaceCard{
@@ -319,6 +325,131 @@ fun GameDetailScreen(
         }
     }
 }
+
+@Composable
+private fun MatchupScorePanel(
+    game:GameRecord,
+    score:MatchupScoreCensus?
+){
+    if(score==null){
+        SurfaceCard{
+            Text(
+                "Aún no existe Censo Matchup Score pre-kickoff para este juego. Ejecuta SINCRONIZAR.",
+                color=DetailMuted,
+                fontSize=10.sp
+            )
+        }
+        return
+    }
+
+    SurfaceCard{
+        Text(
+            "TEAM SCORE LAB · independiente de Core y O/U",
+            color=DetailMuted,
+            fontSize=9.sp,
+            fontWeight=FontWeight.Bold
+        )
+        Spacer(Modifier.height(8.dp))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement=Arrangement.spacedBy(8.dp)
+        ){
+            SmallMetric(
+                score.awayTeam,
+                String.format(Locale.US,"%.1f",score.awayProjection),
+                Modifier.weight(1f)
+            )
+            SmallMetric(
+                score.homeTeam,
+                String.format(Locale.US,"%.1f",score.homeProjection),
+                Modifier.weight(1f)
+            )
+            SmallMetric(
+                "TOTAL μ",
+                String.format(Locale.US,"%.1f",score.totalProjection),
+                Modifier.weight(1f)
+            )
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment=Alignment.CenterVertically
+        ){
+            Column(Modifier.weight(1f)){
+                Text(
+                    "${score.pick} ${String.format(Locale.US,"%.1f",score.marketLine)}",
+                    color=if(score.status=="NO CONCLUYENTE")DetailAmber else DetailGreen,
+                    fontSize=22.sp,
+                    fontWeight=FontWeight.Black
+                )
+                Text(
+                    "${String.format(Locale.US,"%.1f",score.probability*100.0)}% · ${score.status}",
+                    color=DetailMuted,
+                    fontSize=10.sp,
+                    fontWeight=FontWeight.Bold
+                )
+            }
+
+            Column(horizontalAlignment=Alignment.End){
+                Text(
+                    "Reliability ${String.format(Locale.US,"%.0f",score.reliability*100.0)}%",
+                    color=DetailText,
+                    fontSize=9.sp,
+                    fontWeight=FontWeight.Bold
+                )
+                Text(
+                    "Coverage ${score.coverageCount}/${score.coverageTotal}",
+                    color=DetailMuted,
+                    fontSize=9.sp
+                )
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        HorizontalDivider(color=DetailBorder)
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+            "${score.awayTeam}: feature ${signed1(score.awayFeatureAdjustment)} · " +
+                "learning ${signed1(score.awayLearningAdjustment)} (N ${score.awayLearningN})",
+            color=DetailMuted,
+            fontSize=8.sp
+        )
+        Text(
+            "${score.homeTeam}: feature ${signed1(score.homeFeatureAdjustment)} · " +
+                "learning ${signed1(score.homeLearningAdjustment)} (N ${score.homeLearningN})",
+            color=DetailMuted,
+            fontSize=8.sp
+        )
+
+        Spacer(Modifier.height(7.dp))
+
+        Text(
+            "AISLADO: primero proyecta puntos por equipo; sólo después compara la suma contra la línea. No usa μ del Core para construir los puntos.",
+            color=DetailAmber,
+            fontSize=8.sp,
+            fontWeight=FontWeight.Bold
+        )
+
+        if(score.finalAway!=null && score.finalHome!=null){
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "FINAL ${score.finalAway}-${score.finalHome} · " +
+                    "error total ${String.format(Locale.US,"%.1f",kotlin.math.abs((score.finalAway+score.finalHome)-score.totalProjection))} pts · " +
+                    "${score.result ?: "—"}",
+                color=DetailText,
+                fontSize=9.sp,
+                fontWeight=FontWeight.Bold
+            )
+        }
+    }
+}
+
+private fun signed1(v:Double):String =
+    String.format(Locale.US,"%+.1f",v)
 
 @Composable
 private fun MatchupFeaturePanel(game:GameRecord,features:List<MatchupFeature>){

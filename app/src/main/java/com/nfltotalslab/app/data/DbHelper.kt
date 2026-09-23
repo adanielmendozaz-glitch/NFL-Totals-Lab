@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 6) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 7) {
 
     private fun ensureMatchupSchema(db: SQLiteDatabase) {
         db.execSQL("""
@@ -29,6 +29,43 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         """.trimIndent())
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_matchup_snapshot_unique ON matchup_feature_snapshots(game_id,team,feature)")
         db.execSQL("CREATE INDEX IF NOT EXISTS idx_matchup_snapshot_game ON matchup_feature_snapshots(game_id,created_at)")
+    }
+
+    private fun ensureMatchupScoreSchema(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS matchup_score_census(
+                game_id TEXT PRIMARY KEY,
+                season INTEGER NOT NULL,
+                week INTEGER NOT NULL,
+                away_team TEXT NOT NULL,
+                home_team TEXT NOT NULL,
+                away_projection REAL NOT NULL,
+                home_projection REAL NOT NULL,
+                total_projection REAL NOT NULL,
+                market_line REAL NOT NULL,
+                pick TEXT NOT NULL,
+                probability REAL NOT NULL,
+                reliability REAL NOT NULL,
+                coverage_count INTEGER NOT NULL,
+                coverage_total INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                away_feature_adjustment REAL NOT NULL,
+                home_feature_adjustment REAL NOT NULL,
+                away_learning_adjustment REAL NOT NULL,
+                home_learning_adjustment REAL NOT NULL,
+                away_learning_n INTEGER NOT NULL,
+                home_learning_n INTEGER NOT NULL,
+                input_key TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                final_away INTEGER,
+                final_home INTEGER,
+                result TEXT
+            )
+        """.trimIndent())
+        db.execSQL("""
+            CREATE INDEX IF NOT EXISTS idx_matchup_score_week
+            ON matchup_score_census(season,week,created_at)
+        """.trimIndent())
     }
 
     private fun ensureCalibrationSchema(db: SQLiteDatabase) {
@@ -63,6 +100,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         super.onOpen(db)
         ensureCalibrationSchema(db)
         ensureMatchupSchema(db)
+        ensureMatchupScoreSchema(db)
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -197,6 +235,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             )
         """.trimIndent())
         ensureMatchupSchema(db)
+        ensureMatchupScoreSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -256,6 +295,9 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         }
         if (oldVersion < 6) {
             ensureMatchupSchema(db)
+        }
+        if (oldVersion < 7) {
+            ensureMatchupScoreSchema(db)
         }
     }
 
@@ -637,6 +679,106 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
                 val game=finals[c.getString(1)]?:continue
                 val total=game.finalTotal?:continue
                 w.update("matchup_feature_snapshots",ContentValues().apply{put("final_total",total)},"id=?",arrayOf(c.getLong(0).toString()))
+            }
+        }
+    }
+
+    fun hasMatchupScoreCensus(gameId:String):Boolean =
+        readableDatabase.rawQuery(
+            "SELECT 1 FROM matchup_score_census WHERE game_id=? LIMIT 1",
+            arrayOf(gameId)
+        ).use{it.moveToFirst()}
+
+    fun saveMatchupScoreCensus(x:MatchupScoreCensus){
+        val v=ContentValues().apply{
+            put("game_id",x.gameId);put("season",x.season);put("week",x.week)
+            put("away_team",x.awayTeam);put("home_team",x.homeTeam)
+            put("away_projection",x.awayProjection);put("home_projection",x.homeProjection)
+            put("total_projection",x.totalProjection);put("market_line",x.marketLine)
+            put("pick",x.pick);put("probability",x.probability);put("reliability",x.reliability)
+            put("coverage_count",x.coverageCount);put("coverage_total",x.coverageTotal)
+            put("status",x.status)
+            put("away_feature_adjustment",x.awayFeatureAdjustment)
+            put("home_feature_adjustment",x.homeFeatureAdjustment)
+            put("away_learning_adjustment",x.awayLearningAdjustment)
+            put("home_learning_adjustment",x.homeLearningAdjustment)
+            put("away_learning_n",x.awayLearningN);put("home_learning_n",x.homeLearningN)
+            put("input_key",x.inputKey);put("created_at",x.createdAt)
+            if(x.finalAway==null)putNull("final_away")else put("final_away",x.finalAway)
+            if(x.finalHome==null)putNull("final_home")else put("final_home",x.finalHome)
+            put("result",x.result)
+        }
+        writableDatabase.insertWithOnConflict(
+            "matchup_score_census",
+            null,
+            v,
+            SQLiteDatabase.CONFLICT_IGNORE
+        )
+    }
+
+    fun loadMatchupScoreCensus():List<MatchupScoreCensus>{
+        val out=mutableListOf<MatchupScoreCensus>()
+        readableDatabase.rawQuery(
+            """
+            SELECT game_id,season,week,away_team,home_team,away_projection,home_projection,
+                   total_projection,market_line,pick,probability,reliability,coverage_count,
+                   coverage_total,status,away_feature_adjustment,home_feature_adjustment,
+                   away_learning_adjustment,home_learning_adjustment,away_learning_n,
+                   home_learning_n,input_key,created_at,final_away,final_home,result
+            FROM matchup_score_census
+            ORDER BY created_at DESC
+            """.trimIndent(),
+            null
+        ).use{c->
+            while(c.moveToNext()){
+                out+=MatchupScoreCensus(
+                    gameId=c.getString(0),season=c.getInt(1),week=c.getInt(2),
+                    awayTeam=c.getString(3),homeTeam=c.getString(4),
+                    awayProjection=c.getDouble(5),homeProjection=c.getDouble(6),
+                    totalProjection=c.getDouble(7),marketLine=c.getDouble(8),
+                    pick=c.getString(9),probability=c.getDouble(10),reliability=c.getDouble(11),
+                    coverageCount=c.getInt(12),coverageTotal=c.getInt(13),status=c.getString(14),
+                    awayFeatureAdjustment=c.getDouble(15),homeFeatureAdjustment=c.getDouble(16),
+                    awayLearningAdjustment=c.getDouble(17),homeLearningAdjustment=c.getDouble(18),
+                    awayLearningN=c.getInt(19),homeLearningN=c.getInt(20),
+                    inputKey=c.getString(21),createdAt=c.getLong(22),
+                    finalAway=if(c.isNull(23))null else c.getInt(23),
+                    finalHome=if(c.isNull(24))null else c.getInt(24),
+                    result=if(c.isNull(25))null else c.getString(25)
+                )
+            }
+        }
+        return out
+    }
+
+    fun settleMatchupScoreCensus(games:List<GameRecord>){
+        val finals=games.filter{it.finished}.associateBy{it.gameId}
+        if(finals.isEmpty())return
+        val w=writableDatabase
+        readableDatabase.rawQuery(
+            "SELECT game_id,market_line,pick FROM matchup_score_census WHERE result IS NULL",
+            null
+        ).use{c->
+            while(c.moveToNext()){
+                val gameId=c.getString(0)
+                val line=c.getDouble(1)
+                val pick=c.getString(2)
+                val game=finals[gameId] ?: continue
+                val away=game.awayScore ?: continue
+                val home=game.homeScore ?: continue
+                val total=away+home
+
+                val result=when{
+                    total.toDouble()==line -> "PUSH"
+                    pick=="OVER" && total>line -> "WIN"
+                    pick=="UNDER" && total<line -> "WIN"
+                    else -> "LOSS"
+                }
+
+                val v=ContentValues().apply{
+                    put("final_away",away);put("final_home",home);put("result",result)
+                }
+                w.update("matchup_score_census",v,"game_id=?",arrayOf(gameId))
             }
         }
     }

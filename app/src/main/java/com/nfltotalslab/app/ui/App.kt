@@ -49,6 +49,7 @@ fun NflTotalsApp(context:Context){
     var shadows by remember{mutableStateOf(repo.shadows())}
     var calibrations by remember{mutableStateOf(repo.calibrations())}
     var matchupFeatures by remember{mutableStateOf(repo.matchupFeatures(season))}
+    var matchupScores by remember{mutableStateOf(repo.matchupScoreCensus())}
     var bets by remember{mutableStateOf(repo.bets())}
     var bank by remember{mutableStateOf(repo.bank())}
     var syncing by remember{mutableStateOf(false)}
@@ -59,7 +60,7 @@ fun NflTotalsApp(context:Context){
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
 
     fun refresh(){
-        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();matchupFeatures=repo.matchupFeatures(season);bets=repo.bets();bank=repo.bank()
+        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();matchupFeatures=repo.matchupFeatures(season);matchupScores=repo.matchupScoreCensus();bets=repo.bets();bank=repo.bank()
     }
 
     LaunchedEffect(liveEnabled,season){
@@ -90,7 +91,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.9.3 · MATCHUP INTELLIGENCE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.9.4 · MATCHUP SHADOW + SCORE LAB",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -132,6 +133,7 @@ fun NflTotalsApp(context:Context){
                         game=g,
                         prediction=p,
                         matchupFeatures=matchupFeatures.filter{it.team==g.awayTeam || it.team==g.homeTeam},
+                        matchupScore=matchupScores.firstOrNull{it.gameId==g.gameId},
                         onBack={selectedGame=null},
                         onAnalyze={
                             val np=repo.analyze(g)
@@ -152,7 +154,7 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.CENSO->CensusScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.CORE->CoreScreen(preds){sub=SubTab.NONE}
                 sub==SubTab.SHADOW->ShadowScreen(shadows){sub=SubTab.NONE}
-                sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows,games)){sub=SubTab.NONE}
+                sub==SubTab.AUDIT->AuditScreen(AuditLab.build(preds,shadows,games,matchupScores)){sub=SubTab.NONE}
                 sub==SubTab.APUESTAS->BetsPortfolioScreen(bets,preds,bank){sub=SubTab.NONE}
                 sub==SubTab.BANK->BankPortfolioScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
