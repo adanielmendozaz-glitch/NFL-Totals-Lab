@@ -448,9 +448,6 @@ private fun MatchupScorePanel(
     }
 }
 
-private fun signed1(v:Double):String =
-    String.format(Locale.US,"%+.1f",v)
-
 @Composable
 private fun MatchupFeaturePanel(game:GameRecord,features:List<MatchupFeature>){
     val byTeam=features.groupBy{it.team}

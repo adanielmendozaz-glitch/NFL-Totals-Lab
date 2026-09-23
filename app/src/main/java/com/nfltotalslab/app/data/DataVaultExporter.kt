@@ -120,7 +120,7 @@ object DataVaultExporter {
                 putNullable("finalTotal",x.finalTotal);putNullable("result",x.result)
                 putNullable("awayError",if(x.finalAway!=null)x.finalAway.toDouble()-x.awayProjection else null)
                 putNullable("homeError",if(x.finalHome!=null)x.finalHome.toDouble()-x.homeProjection else null)
-                putNullable("totalError",if(x.finalTotal!=null)x.finalTotal.toDouble()-x.totalProjection else null)
+                putNullable("totalError",x.finalTotal?.let{it.toDouble()-x.totalProjection})
             })}
         })
 

@@ -11,8 +11,8 @@ android {
         applicationId = "com.nfltotalslab.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.9.4"
+        versionCode = 28
+        versionName = "0.9.4.1"
     }
 
     val stableKeystorePath = System.getenv("NFL_KEYSTORE_PATH")

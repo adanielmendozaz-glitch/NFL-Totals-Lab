@@ -303,3 +303,10 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Residual learning uses only settled earlier-week Matchup Score games, with shrinkage and +/-2.5 point caps.
 - Data Vault V3 exports matchup_score_census, finals and residual errors.
 - Official Core remains 0.9.0-integrity and is never changed by this layer.
+
+
+## V0.9.4.1 · Compile Hotfix
+
+- Fixes DataVault smart-cast error for computed finalTotal.
+- Removes duplicate signed1(Double) helper causing ambiguous overloads.
+- No model, Core, Matchup, Shadow, DB or learning logic changed.
