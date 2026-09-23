@@ -280,3 +280,14 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Starter rows are deduplicated by athlete identity; nucleus can never exceed 22.
 - Gate READY requires exactly 11 offense + 11 defense unique starters.
 - Core/Ranking/Calibration remain unchanged. No SQLite migration.
+
+
+## V0.9.3 · Matchup Intelligence Foundation
+
+- Adds isolated Matchup Feature Vault; official Core 0.9.0-integrity is unchanged.
+- Tier A nflverse PBP: right-side YPC, rush rate, rush yards, first-down YPC and defensive mirrors.
+- Tier B nflverse/PFR advanced: pressure allowed/generated and RB yards after contact when available.
+- Stores raw value, sample size, source, scope and reliability; missing data is never zero-filled.
+- DB6 adds matchup_team_features and pre-kickoff matchup_feature_snapshots.
+- Data Vault V2 exports matchup_features and matchup_snapshots.
+- Matchup Intelligence is CAPTURE ONLY in V0.9.3 and cannot change official picks.

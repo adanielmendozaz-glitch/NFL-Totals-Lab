@@ -11,16 +11,18 @@ object DataVaultExporter {
         predictions:List<Prediction>,
         shadows:List<ShadowPrediction>,
         calibrations:List<CalibrationSnapshot>,
+        matchupFeatures:List<MatchupFeature>,
+        matchupSnapshots:List<MatchupFeatureSnapshot>,
         bets:List<BetRecord>,
         bank:List<BankEntry>,
         lastSync:Long?,
         lastDeepSync:Long?
     ):String{
         val root=JSONObject()
-        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V1")
+        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V2")
         root.put("exported_at",System.currentTimeMillis())
         root.put("season",season)
-        root.put("app_version","0.9.2.4")
+        root.put("app_version","0.9.3")
         root.put("current_model_version","0.9.0-integrity")
         root.put("last_sync",lastSync ?: JSONObject.NULL)
         root.put("last_deep_sync",lastDeepSync ?: JSONObject.NULL)
@@ -41,6 +43,10 @@ object DataVaultExporter {
             put("duplicate_auto_games",predictions.filter{it.analysisSource=="AUTO_CENSUS"}.groupBy{it.gameId}.count{it.value.size>1})
             put("missing_metric_teams",JSONArray((expectedTeams-metricTeams).sorted()))
             put("model_versions",JSONObject().apply{versions.forEach{(k,v)->put(k,v)}})
+            put("matchup_feature_rows",matchupFeatures.size)
+            put("matchup_feature_teams",matchupFeatures.map{it.team}.distinct().size)
+            put("matchup_snapshot_rows",matchupSnapshots.size)
+            put("matchup_snapshot_games",matchupSnapshots.map{it.gameId}.distinct().size)
             put("note","Predicciones históricas pueden conservar modelVersion=0.4; V0.9 corrige el versionado hacia adelante.")
         })
 
@@ -81,6 +87,18 @@ object DataVaultExporter {
             put("awayTeam",x.awayTeam);put("homeTeam",x.homeTeam);put("line",x.line);put("pick",x.pick);put("rawProbability",x.rawProbability)
             put("calibratedProbability",x.calibratedProbability);put("intercept",x.intercept);put("slope",x.slope);put("trainN",x.trainN)
             put("maturity",x.maturity);put("inputKey",x.inputKey);put("createdAt",x.createdAt);putNullable("finalTotal",x.finalTotal);putNullable("result",x.result)
+        })}})
+
+        root.put("matchup_features",JSONArray().apply{matchupFeatures.forEach{x->put(JSONObject().apply{
+            put("season",x.season);put("team",x.team);put("feature",x.feature);put("side",x.side);put("value",x.value)
+            put("sampleN",x.sampleN);put("source",x.source);put("scope",x.scope);put("reliability",x.reliability);put("updatedAt",x.updatedAt)
+        })}})
+        root.put("matchup_snapshots",JSONArray().apply{matchupSnapshots.forEach{x->put(JSONObject().apply{
+            put("id",x.id);put("gameId",x.gameId);put("season",x.season);put("week",x.week);put("team",x.team);put("opponent",x.opponent)
+            put("feature",x.feature);put("side",x.side);put("value",x.value);put("sampleN",x.sampleN);put("source",x.source);put("scope",x.scope)
+            put("reliability",x.reliability);putNullable("corePredictionId",x.corePredictionId);putNullable("coreProjection",x.coreProjection)
+            putNullable("marketLine",x.marketLine);put("coreInputKey",x.coreInputKey);put("createdAt",x.createdAt);putNullable("finalTotal",x.finalTotal)
+            putNullable("coreResidual",if(x.finalTotal!=null && x.coreProjection!=null)x.finalTotal.toDouble()-x.coreProjection else null)
         })}})
 
         root.put("bets",JSONArray().apply{bets.forEach{b->put(JSONObject().apply{

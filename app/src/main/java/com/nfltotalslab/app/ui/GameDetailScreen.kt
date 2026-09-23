@@ -35,6 +35,7 @@ private val DetailBorder=Color(0xFF1A3B52)
 fun GameDetailScreen(
     game:GameRecord,
     prediction:Prediction?,
+    matchupFeatures:List<MatchupFeature>,
     onBack:()->Unit,
     onAnalyze:suspend()->Prediction,
     onLoadRoster:suspend()->GameRosterIntelligence,
@@ -185,6 +186,11 @@ fun GameDetailScreen(
                 }
 
                 item{
+                    SectionTitle("MATCHUP INTELLIGENCE · FEATURE VAULT")
+                    MatchupFeaturePanel(game,matchupFeatures)
+                }
+
+                item{
                     SectionTitle("ROSTER INTELLIGENCE · TITULARES, SUPLENTES Y BAJAS")
                     when{
                         rosterLoading->SurfaceCard{
@@ -312,6 +318,61 @@ fun GameDetailScreen(
             }
         }
     }
+}
+
+@Composable
+private fun MatchupFeaturePanel(game:GameRecord,features:List<MatchupFeature>){
+    val byTeam=features.groupBy{it.team}
+    if(features.isEmpty()){
+        SurfaceCard{Text("Sin features todavía. Pulsa SINCRONIZAR para construir el Feature Vault.",color=DetailMuted,fontSize=10.sp)}
+        return
+    }
+
+    Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
+        MatchupDirectionCard(game.awayTeam,game.homeTeam,byTeam[game.awayTeam].orEmpty(),byTeam[game.homeTeam].orEmpty())
+        MatchupDirectionCard(game.homeTeam,game.awayTeam,byTeam[game.homeTeam].orEmpty(),byTeam[game.awayTeam].orEmpty())
+        Text(
+            "FOUNDATION · CAPTURE ONLY. Se congela pre-kickoff en Data Vault; todavía NO modifica Core, Ranking ni probabilidades.",
+            color=DetailAmber,fontSize=8.sp,fontWeight=FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun MatchupDirectionCard(offense:String,defense:String,offenseFeatures:List<MatchupFeature>,defenseFeatures:List<MatchupFeature>){
+    val off=offenseFeatures.associateBy{it.feature};val def=defenseFeatures.associateBy{it.feature}
+    SurfaceCard{
+        Text("$offense OFF → $defense DEF",color=DetailText,fontSize=13.sp,fontWeight=FontWeight.Black)
+        Spacer(Modifier.height(6.dp))
+        MatchupFeatureRow("RUN RIGHT",off["rush_right_ypc"],def["rush_right_ypc_allowed"])
+        MatchupFeatureRow("PRESSURE",off["pressure_allowed_rate"],def["pressure_rate"])
+        MatchupFeatureRow("RUSH IDENTITY",off["rush_rate"],def["ypc_allowed"])
+        MatchupFeatureRow("RUSH VOLUME",off["rush_yards"],def["rush_yards_allowed"])
+        MatchupFeatureRow("1ST DOWN RUN",off["first_down_ypc"],def["first_down_ypc_allowed"])
+        MatchupFeatureRow("RB CONTACT",off["rb_yac_per_carry"],def["rb_yac_allowed"])
+    }
+}
+
+@Composable
+private fun MatchupFeatureRow(label:String,offense:MatchupFeature?,defense:MatchupFeature?){
+    Row(Modifier.fillMaxWidth().padding(vertical=5.dp),verticalAlignment=Alignment.CenterVertically){
+        Text(label,color=DetailMuted,fontSize=9.sp,fontWeight=FontWeight.Bold,modifier=Modifier.weight(.85f))
+        Column(Modifier.weight(1f),horizontalAlignment=Alignment.End){
+            Text("OFF ${formatFeature(offense)}",color=DetailText,fontSize=9.sp,fontWeight=FontWeight.Bold)
+            Text("DEF ${formatFeature(defense)}",color=DetailMuted,fontSize=8.sp)
+        }
+    }
+    HorizontalDivider(color=DetailBorder)
+}
+
+private fun formatFeature(x:MatchupFeature?):String{
+    if(x==null)return "—"
+    val value=when(x.feature){
+        "rush_rate","pressure_allowed_rate","pressure_rate" -> "${String.format(Locale.US,"%.1f",x.value*100.0)}%"
+        "rush_yards","rush_yards_allowed" -> String.format(Locale.US,"%.0f yd",x.value)
+        else -> String.format(Locale.US,"%.2f",x.value)
+    }
+    return "$value · n=${x.sampleN} · r=${String.format(Locale.US,"%.0f",x.reliability*100.0)}%"
 }
 
 @Composable

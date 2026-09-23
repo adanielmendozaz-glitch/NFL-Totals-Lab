@@ -48,6 +48,7 @@ fun NflTotalsApp(context:Context){
     var preds by remember{mutableStateOf(repo.predictions())}
     var shadows by remember{mutableStateOf(repo.shadows())}
     var calibrations by remember{mutableStateOf(repo.calibrations())}
+    var matchupFeatures by remember{mutableStateOf(repo.matchupFeatures(season))}
     var bets by remember{mutableStateOf(repo.bets())}
     var bank by remember{mutableStateOf(repo.bank())}
     var syncing by remember{mutableStateOf(false)}
@@ -58,7 +59,7 @@ fun NflTotalsApp(context:Context){
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
 
     fun refresh(){
-        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();bets=repo.bets();bank=repo.bank()
+        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();matchupFeatures=repo.matchupFeatures(season);bets=repo.bets();bank=repo.bank()
     }
 
     LaunchedEffect(liveEnabled,season){
@@ -89,7 +90,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V0.9.2.4 · INJURY RESOLVER",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V0.9.3 · MATCHUP INTELLIGENCE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -130,6 +131,7 @@ fun NflTotalsApp(context:Context){
                     GameDetailScreen(
                         game=g,
                         prediction=p,
+                        matchupFeatures=matchupFeatures.filter{it.team==g.awayTeam || it.team==g.homeTeam},
                         onBack={selectedGame=null},
                         onAnalyze={
                             val np=repo.analyze(g)

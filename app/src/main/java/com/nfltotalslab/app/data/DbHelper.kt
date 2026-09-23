@@ -5,7 +5,31 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 5) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 6) {
+
+    private fun ensureMatchupSchema(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS matchup_team_features(
+                season INTEGER NOT NULL, team TEXT NOT NULL, feature TEXT NOT NULL,
+                side TEXT NOT NULL, value REAL NOT NULL, sample_n INTEGER NOT NULL,
+                source TEXT NOT NULL, scope TEXT NOT NULL, reliability REAL NOT NULL,
+                updated_at INTEGER NOT NULL, PRIMARY KEY(season,team,feature)
+            )
+        """.trimIndent())
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS matchup_feature_snapshots(
+                id INTEGER PRIMARY KEY AUTOINCREMENT, game_id TEXT NOT NULL,
+                season INTEGER NOT NULL, week INTEGER NOT NULL, team TEXT NOT NULL,
+                opponent TEXT NOT NULL, feature TEXT NOT NULL, side TEXT NOT NULL,
+                value REAL NOT NULL, sample_n INTEGER NOT NULL, source TEXT NOT NULL,
+                scope TEXT NOT NULL, reliability REAL NOT NULL, core_prediction_id INTEGER,
+                core_projection REAL, market_line REAL, core_input_key TEXT NOT NULL,
+                created_at INTEGER NOT NULL, final_total INTEGER
+            )
+        """.trimIndent())
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_matchup_snapshot_unique ON matchup_feature_snapshots(game_id,team,feature)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS idx_matchup_snapshot_game ON matchup_feature_snapshots(game_id,created_at)")
+    }
 
     private fun ensureCalibrationSchema(db: SQLiteDatabase) {
         db.execSQL("""
@@ -38,6 +62,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
         ensureCalibrationSchema(db)
+        ensureMatchupSchema(db)
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -171,6 +196,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
                 v TEXT NOT NULL
             )
         """.trimIndent())
+        ensureMatchupSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -227,6 +253,9 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
                 )
             """.trimIndent())
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_cal_prediction ON calibration_snapshots(prediction_id)")
+        }
+        if (oldVersion < 6) {
+            ensureMatchupSchema(db)
         }
     }
 
@@ -540,6 +569,76 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             while(c.moveToNext()) out+=BankEntry(c.getLong(0),c.getDouble(1),c.getString(2),c.getLong(3))
         }
         return out
+    }
+
+    fun upsertMatchupFeatures(list:List<MatchupFeature>){
+        val w=writableDatabase;w.beginTransaction()
+        try{
+            list.forEach{x->
+                val v=ContentValues().apply{
+                    put("season",x.season);put("team",x.team);put("feature",x.feature);put("side",x.side)
+                    put("value",x.value);put("sample_n",x.sampleN);put("source",x.source);put("scope",x.scope)
+                    put("reliability",x.reliability);put("updated_at",x.updatedAt)
+                }
+                w.insertWithOnConflict("matchup_team_features",null,v,SQLiteDatabase.CONFLICT_REPLACE)
+            }
+            w.setTransactionSuccessful()
+        }finally{w.endTransaction()}
+    }
+
+    fun loadMatchupFeatures(season:Int):List<MatchupFeature>{
+        val out=mutableListOf<MatchupFeature>()
+        readableDatabase.rawQuery(
+            "SELECT season,team,feature,side,value,sample_n,source,scope,reliability,updated_at FROM matchup_team_features WHERE season=? ORDER BY team,feature",
+            arrayOf(season.toString())
+        ).use{c->while(c.moveToNext())out+=MatchupFeature(c.getInt(0),c.getString(1),c.getString(2),c.getString(3),c.getDouble(4),c.getInt(5),c.getString(6),c.getString(7),c.getDouble(8),c.getLong(9))}
+        return out
+    }
+
+    fun saveMatchupSnapshot(x:MatchupFeatureSnapshot){
+        val v=ContentValues().apply{
+            put("game_id",x.gameId);put("season",x.season);put("week",x.week);put("team",x.team);put("opponent",x.opponent)
+            put("feature",x.feature);put("side",x.side);put("value",x.value);put("sample_n",x.sampleN);put("source",x.source)
+            put("scope",x.scope);put("reliability",x.reliability)
+            if(x.corePredictionId==null)putNull("core_prediction_id")else put("core_prediction_id",x.corePredictionId)
+            if(x.coreProjection==null)putNull("core_projection")else put("core_projection",x.coreProjection)
+            if(x.marketLine==null)putNull("market_line")else put("market_line",x.marketLine)
+            put("core_input_key",x.coreInputKey);put("created_at",x.createdAt)
+            if(x.finalTotal==null)putNull("final_total")else put("final_total",x.finalTotal)
+        }
+        writableDatabase.insertWithOnConflict("matchup_feature_snapshots",null,v,SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun loadMatchupSnapshots():List<MatchupFeatureSnapshot>{
+        val out=mutableListOf<MatchupFeatureSnapshot>()
+        readableDatabase.rawQuery(
+            "SELECT id,game_id,season,week,team,opponent,feature,side,value,sample_n,source,scope,reliability,core_prediction_id,core_projection,market_line,core_input_key,created_at,final_total FROM matchup_feature_snapshots ORDER BY created_at DESC",
+            null
+        ).use{c->
+            while(c.moveToNext())out+=MatchupFeatureSnapshot(
+                id=c.getLong(0),gameId=c.getString(1),season=c.getInt(2),week=c.getInt(3),team=c.getString(4),
+                opponent=c.getString(5),feature=c.getString(6),side=c.getString(7),value=c.getDouble(8),sampleN=c.getInt(9),
+                source=c.getString(10),scope=c.getString(11),reliability=c.getDouble(12),
+                corePredictionId=if(c.isNull(13))null else c.getLong(13),
+                coreProjection=if(c.isNull(14))null else c.getDouble(14),
+                marketLine=if(c.isNull(15))null else c.getDouble(15),
+                coreInputKey=c.getString(16),createdAt=c.getLong(17),
+                finalTotal=if(c.isNull(18))null else c.getInt(18)
+            )
+        }
+        return out
+    }
+
+    fun settleMatchupSnapshots(games:List<GameRecord>){
+        val finals=games.filter{it.finished}.associateBy{it.gameId};if(finals.isEmpty())return
+        val w=writableDatabase
+        readableDatabase.rawQuery("SELECT id,game_id FROM matchup_feature_snapshots WHERE final_total IS NULL",null).use{c->
+            while(c.moveToNext()){
+                val game=finals[c.getString(1)]?:continue
+                val total=game.finalTotal?:continue
+                w.update("matchup_feature_snapshots",ContentValues().apply{put("final_total",total)},"id=?",arrayOf(c.getLong(0).toString()))
+            }
+        }
     }
 
     fun putKv(k:String,v:String){

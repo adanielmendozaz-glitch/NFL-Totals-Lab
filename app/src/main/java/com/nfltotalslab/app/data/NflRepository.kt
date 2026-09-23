@@ -16,8 +16,10 @@ class NflRepository(
 ){
     private val engine=TotalsEngine(100_000)
     private val rosterApi=EspnRosterService()
+    private val matchupApi=MatchupFeatureService()
     private val modelVersion="0.9.0-integrity"
     private val deepCacheMs=4L*60L*60L*1000L
+    private val matchupCacheMs=12L*60L*60L*1000L
 
     suspend fun fastSync(season:Int):SyncSummary = withContext(Dispatchers.IO){
         val schedule=api.fetchSchedule(season)
@@ -25,6 +27,7 @@ class NflRepository(
         db.settlePredictions(schedule)
         db.settleShadowPredictions(schedule)
         db.settleCalibrationSnapshots(schedule)
+        db.settleMatchupSnapshots(schedule)
         val settledBets=settlePendingBets(db)
         db.putKv("last_sync",System.currentTimeMillis().toString())
 
@@ -100,12 +103,30 @@ class NflRepository(
             }
         }
 
+        var matchupFeatures=db.loadMatchupFeatures(season)
+        var matchupDataSource="CACHE"
+        val lastMatchup=db.getKv("last_matchup_feature_sync")?.toLongOrNull() ?: 0L
+        val matchupFresh=!force && matchupFeatures.isNotEmpty() && now-lastMatchup<matchupCacheMs
+
+        if(!matchupFresh){
+            val fresh=runCatching{matchupApi.fetchFeatures(season)}.getOrElse{emptyList()}
+            if(fresh.isNotEmpty()){
+                db.upsertMatchupFeatures(fresh)
+                matchupFeatures=fresh
+                db.putKv("last_matchup_feature_sync",System.currentTimeMillis().toString())
+                matchupDataSource="FRESH"
+            }else{
+                matchupDataSource=if(matchupFeatures.isEmpty())"NO DATA" else "STALE CACHE"
+            }
+        }
+
         val week=activeWeek(schedule)
         val liveStates=if(week==null) emptyMap() else
             runCatching{api.fetchLiveScores(season,week)}.getOrElse{emptyMap()}
         val blocked=liveStates.values.filter{it.state!="pre"}.map{it.matchKey}.toSet()
 
         val auto=autoCensus(schedule,metrics,week,blocked)
+        val matchupSnapshots=ensureMatchupSnapshots(schedule,matchupFeatures,week,blocked)
         val calibration=rollCalibration(schedule,week,blocked)
         val shadow=ensureShadowCensus(schedule,metrics,week,blocked)
 
@@ -114,7 +135,7 @@ class NflRepository(
             pbpTeams=pbpTeams,
             rosterPlayers=rosterRows,
             injuryRows=injuryRows,
-            message="DEEP ✓ · $source · AUTO $auto · CAL↻ $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
+            message="DEEP ✓ · $source · FEAT $matchupDataSource ${matchupFeatures.size} · SNAP $matchupSnapshots · AUTO $auto · CAL↻ $calibration · SHADOW $shadow${week?.let{" · Week $it"} ?: ""}",
             autoAnalyzed=auto,
             activeWeek=week
         )
@@ -128,6 +149,7 @@ class NflRepository(
             db.settlePredictions(updated)
             db.settleShadowPredictions(updated)
             db.settleCalibrationSnapshots(updated)
+            db.settleMatchupSnapshots(updated)
 
             // Nuevo FINAL -> recalibra juegos posteriores todavía pregame.
             // KickoffGuard impide modificar partidos ya iniciados.
@@ -143,6 +165,8 @@ class NflRepository(
     fun predictions()=db.loadPredictions()
     fun shadows()=db.loadShadowPredictions()
     fun calibrations()=db.loadCalibrationSnapshots()
+    fun matchupFeatures(season:Int)=db.loadMatchupFeatures(season)
+    fun matchupSnapshots()=db.loadMatchupSnapshots()
     fun calibrationState()=ProgressiveCalibrator.fit(db.loadPredictions())
     fun bets()=db.loadBets()
     fun bank()=db.loadBank()
@@ -171,6 +195,8 @@ class NflRepository(
             predictions=db.loadPredictions(),
             shadows=db.loadShadowPredictions(),
             calibrations=db.loadCalibrationSnapshots(),
+            matchupFeatures=db.loadMatchupFeatures(season),
+            matchupSnapshots=db.loadMatchupSnapshots(),
             bets=db.loadBets(),
             bank=db.loadBank(),
             lastSync=lastSync(),
@@ -389,6 +415,38 @@ class NflRepository(
             }
         }
         count
+    }
+
+    private fun ensureMatchupSnapshots(
+        schedule:List<GameRecord>,features:List<MatchupFeature>,week:Int?,blocked:Set<String>
+    ):Int{
+        if(week==null || features.isEmpty())return 0
+        val byTeam=features.groupBy{it.team}
+        val cores=db.loadPredictions()
+            .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion==modelVersion}
+            .groupBy{it.gameId}.mapValues{(_,rows)->rows.maxByOrNull{it.createdAt}}
+
+        val candidates=schedule.filter{
+            it.gameType=="REG" && it.week==week && !it.finished && it.totalLine!=null &&
+            !KickoffGuard.isLocked(it) && "${it.awayTeam}@${it.homeTeam}" !in blocked
+        }
+
+        var rows=0
+        candidates.forEach{game->
+            val core=cores[game.gameId]?:return@forEach
+            listOf(game.awayTeam to game.homeTeam,game.homeTeam to game.awayTeam).forEach{(team,opponent)->
+                byTeam[team].orEmpty().forEach{f->
+                    db.saveMatchupSnapshot(MatchupFeatureSnapshot(
+                        gameId=game.gameId,season=game.season,week=game.week,team=team,opponent=opponent,
+                        feature=f.feature,side=f.side,value=f.value,sampleN=f.sampleN,source=f.source,scope=f.scope,
+                        reliability=f.reliability,corePredictionId=core.id,coreProjection=core.projection,
+                        marketLine=game.totalLine,coreInputKey=core.inputKey
+                    ))
+                    rows++
+                }
+            }
+        }
+        return rows
     }
 
     private fun activeWeek(schedule:List<GameRecord>):Int? =
