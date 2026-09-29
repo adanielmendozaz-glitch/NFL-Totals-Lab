@@ -6,6 +6,7 @@ import com.nfltotalslab.app.model.AdaptiveEnsembleShadow
 import com.nfltotalslab.app.model.RosterAdjustmentShadow
 import com.nfltotalslab.app.model.MatchupScoreLab
 import com.nfltotalslab.app.model.TotalsEngine
+import com.nfltotalslab.app.model.LegacyTotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
 import kotlinx.coroutines.Dispatchers
@@ -16,9 +17,10 @@ class NflRepository(
     private val api:NflverseService=NflverseService()
 ){
     private val engine=TotalsEngine(100_000)
+    private val legacyEngine=LegacyTotalsEngine(100_000)
     private val rosterApi=EspnRosterService()
     private val matchupApi=MatchupFeatureService()
-    private val modelVersion="0.9.0-integrity"
+    private val modelVersion="1.0.0-core-rebuild"
     private val deepCacheMs=4L*60L*60L*1000L
     private val matchupCacheMs=12L*60L*60L*1000L
 
@@ -395,6 +397,36 @@ class NflRepository(
                 it.inputKey==key
             } ?: return@forEach
 
+            // A/B control: Core V0.9 exacto, sólo Shadow.
+            val legacyCore=legacyEngine.predict(
+                game,
+                metricMap[game.awayTeam],
+                metricMap[game.homeTeam]
+            )
+            val legacyShadow=ShadowPrediction(
+                id=core.id*100L+90L,
+                gameId=core.gameId,
+                season=core.season,
+                week=core.week,
+                awayTeam=core.awayTeam,
+                homeTeam=core.homeTeam,
+                line=core.line,
+                modelName="Core 0.9.0 Control",
+                pick=legacyCore.pick,
+                probability=legacyCore.probability,
+                projection=legacyCore.projection,
+                inputKey="${core.inputKey}|LEGACY_CORE_0_9_0",
+                createdAt=core.createdAt
+            )
+            if(!db.hasShadowPrediction(
+                    legacyShadow.gameId,
+                    legacyShadow.modelName,
+                    legacyShadow.inputKey
+                )){
+                db.saveShadowPrediction(legacyShadow)
+                count++
+            }
+
             ShadowLab.fromCore(core).forEach{x->
                 if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
                     db.saveShadowPrediction(x)
@@ -510,7 +542,7 @@ class NflRepository(
         fun m(x:TeamMetrics?):String = if(x==null) "NA" else listOf(
             x.games,x.plays,x.drives,x.offEpaPerPlay,x.defEpaAllowedPerPlay,
             x.successRate,x.explosiveRate,x.turnoverRate,x.tdPerDrive,
-            x.fgPerDrive,x.drivesPerGame
+            x.fgPerDrive,x.drivesPerGame,x.pointsFor,x.pointsPerDrive
         ).joinToString(",")
 
         return listOf(modelVersion,game.gameId,game.totalLine,m(away),m(home)).joinToString("|")

@@ -310,3 +310,16 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Fixes DataVault smart-cast error for computed finalTotal.
 - Removes duplicate signed1(Double) helper causing ambiguous overloads.
 - No model, Core, Matchup, Shadow, DB or learning logic changed.
+
+
+## V1.0 · Core Rebuild
+
+- Official generation: `1.0.0-core-rebuild`.
+- Three equal-weight decision families: Markov, Distribution(NB+Bayesian), corrected DriveMC.
+- Poisson remains diagnostic only.
+- DriveMC preserves target PPD instead of double-discounting scoring.
+- Shrinkage priors: 180 plays / 16 drives; shrinked PPD contributes 25%.
+- Confidence, Dispersion and Market guards reduce false early certainty.
+- Exact V0.9 engine preserved as `Core 0.9.0 Control` Shadow.
+- Adaptive Ensemble becomes family-aware V2; Matchup/OppAdj/Team Score/Roster stay isolated.
+- Data Vault V4 records architecture metadata.

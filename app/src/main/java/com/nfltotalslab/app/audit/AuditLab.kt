@@ -61,7 +61,7 @@ object AuditLab {
         shadows:List<ShadowPrediction>,
         games:List<GameRecord>,
         matchupScores:List<MatchupScoreCensus> = emptyList(),
-        currentVersion:String="0.9.0-integrity",
+        currentVersion:String="1.0.0-core-rebuild",
         odds:Double=1.91
     ):AuditSnapshot{
         val gameMap=games.associateBy{it.gameId}

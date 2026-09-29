@@ -20,13 +20,29 @@ object DataVaultExporter {
         lastDeepSync:Long?
     ):String{
         val root=JSONObject()
-        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V3")
+        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V4")
         root.put("exported_at",System.currentTimeMillis())
         root.put("season",season)
-        root.put("app_version","0.9.4")
-        root.put("current_model_version","0.9.0-integrity")
+        root.put("app_version","1.0.0")
+        root.put("current_model_version","1.0.0-core-rebuild")
         root.put("last_sync",lastSync ?: JSONObject.NULL)
         root.put("last_deep_sync",lastDeepSync ?: JSONObject.NULL)
+
+        root.put("core_architecture",JSONObject().apply{
+            put("generation","1.0.0-core-rebuild")
+            put("decision_families",JSONArray().apply{
+                put("Markov Drive")
+                put("Distribution Family = Negative Binomial + Bayesian")
+                put("Drive Monte Carlo · PPD corrected")
+            })
+            put("family_weights","equal 1/3 each")
+            put("poisson_role","diagnostic only")
+            put("play_prior",180)
+            put("drive_prior",16)
+            put("confidence_cap_early",0.66)
+            put("dispersion_pass_threshold",9.0)
+            put("legacy_control_shadow","Core 0.9.0 Control")
+        })
 
         val official=predictions.filter{it.analysisSource=="AUTO_CENSUS"}
             .groupBy{it.gameId}.mapNotNull{(_,rows)->rows.maxByOrNull{it.createdAt}}

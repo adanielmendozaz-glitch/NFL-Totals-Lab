@@ -173,15 +173,50 @@ fun GameDetailScreen(
                                 }
                                 if(idx<p.engines.lastIndex)HorizontalDivider(color=DetailBorder)
                             }
-                            Spacer(Modifier.height(6.dp))
-                            val agree=p.engines.count{
-                                val side=if(it.pOver>=it.pUnder)"OVER" else "UNDER"
-                                side==p.pick
+                            Spacer(Modifier.height(8.dp))
+                            HorizontalDivider(color=DetailBorder)
+                            Spacer(Modifier.height(8.dp))
+
+                            val markov=p.engines.firstOrNull{it.name=="Markov Drive"}
+                            val negbin=p.engines.firstOrNull{it.name=="Negative Binomial"}
+                            val bayes=p.engines.firstOrNull{it.name=="Bayesian"}
+                            val drive=p.engines.firstOrNull{it.name=="Drive Monte Carlo"}
+
+                            if(markov!=null && negbin!=null && bayes!=null && drive!=null){
+                                val distOver=(negbin.pOver+bayes.pOver)/2.0
+                                val distUnder=(negbin.pUnder+bayes.pUnder)/2.0
+                                val distProjection=(negbin.projection+bayes.projection)/2.0
+                                val familySides=listOf(
+                                    if(markov.pOver>=markov.pUnder)"OVER" else "UNDER",
+                                    if(distOver>=distUnder)"OVER" else "UNDER",
+                                    if(drive.pOver>=drive.pUnder)"OVER" else "UNDER"
+                                )
+                                val familyProjections=listOf(
+                                    markov.projection,distProjection,drive.projection
+                                )
+                                val familyAgree=familySides.count{it==p.pick}
+                                val familyDispersion=
+                                    familyProjections.maxOrNull()!!-
+                                    familyProjections.minOrNull()!!
+
+                                Text(
+                                    "CORE V1 · FAMILIAS INDEPENDIENTES",
+                                    color=DetailAmber,fontSize=9.sp,fontWeight=FontWeight.Black
+                                )
+                                Text(
+                                    "Markov 33% · Distribution(NB+Bayes) 33% · DriveMC 33%",
+                                    color=DetailMuted,fontSize=8.sp
+                                )
+                                Text(
+                                    "Acuerdo $familyAgree/3 · dispersión ${fmt1(familyDispersion)} pts · Poisson = diagnóstico",
+                                    color=DetailMuted,fontSize=9.sp,fontWeight=FontWeight.Bold
+                                )
+                            }else{
+                                Text(
+                                    "Core V1 · lectura de familias no disponible",
+                                    color=DetailMuted,fontSize=9.sp
+                                )
                             }
-                            Text(
-                                "Consenso $agree/${p.engines.size} · dispersión ${engineDispersionLabel(p)}",
-                                color=DetailMuted,fontSize=9.sp
-                            )
                         }
                     }
                 }

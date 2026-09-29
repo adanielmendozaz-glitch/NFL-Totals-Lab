@@ -12,7 +12,7 @@ import kotlin.math.sqrt
 
 object MatchupScoreLab {
     const val MODEL_NAME="Matchup Shadow V1"
-    private const val CORE_GENERATION="0.9.0-integrity"
+    private const val CORE_GENERATION="1.0.0-core-rebuild"
 
     private data class TeamProjection(
         val points:Double,

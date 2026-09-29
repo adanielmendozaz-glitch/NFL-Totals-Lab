@@ -4,7 +4,7 @@ import com.nfltotalslab.app.data.*
 import kotlin.math.*
 import kotlin.random.Random
 
-class TotalsEngine(private val simulations:Int=100_000) {
+class LegacyTotalsEngine(private val simulations:Int=100_000) {
     private val rng=Random.Default
 
     fun predict(game:GameRecord, awayRaw:TeamMetrics?, homeRaw:TeamMetrics?):Prediction {
@@ -18,20 +18,8 @@ class TotalsEngine(private val simulations:Int=100_000) {
         val epaA=(away.offEpaPerPlay*0.58 + home.defEpaAllowedPerPlay*0.42)
         val epaH=(home.offEpaPerPlay*0.58 + away.defEpaAllowedPerPlay*0.42 + 0.015)
 
-        val formulaPpdA=(
-            2.02 + 3.8*epaA +
-            1.1*(away.successRate-.43) +
-            .55*(away.explosiveRate-.10)
-        ).coerceIn(1.1,3.3)
-
-        val formulaPpdH=(
-            2.08 + 3.8*epaH +
-            1.1*(home.successRate-.43) +
-            .55*(home.explosiveRate-.10)
-        ).coerceIn(1.1,3.4)
-
-        val ppdA=(formulaPpdA*.75 + away.pointsPerDrive*.25).coerceIn(1.0,3.5)
-        val ppdH=(formulaPpdH*.75 + home.pointsPerDrive*.25).coerceIn(1.0,3.6)
+        val ppdA=(2.02 + 3.8*epaA + 1.1*(away.successRate-.43) + .55*(away.explosiveRate-.10)).coerceIn(1.1,3.3)
+        val ppdH=(2.08 + 3.8*epaH + 1.1*(home.successRate-.43) + .55*(home.explosiveRate-.10)).coerceIn(1.1,3.4)
 
         val markov=markov(line,drivesA,drivesH,away,home,epaA,epaH)
         val negbin=negativeBinomial(line,drivesA*ppdA,drivesH*ppdH)
@@ -40,80 +28,36 @@ class TotalsEngine(private val simulations:Int=100_000) {
         val poisson=poissonShadow(line,drivesA*ppdA+drivesH*ppdH)
 
         val engines=listOf(markov,negbin,driveMc,bayes,poisson)
-
-        val distribution=EngineSlice(
-            name="Distribution Family",
-            projection=(negbin.projection+bayes.projection)/2.0,
-            pOver=(negbin.pOver+bayes.pOver)/2.0,
-            pUnder=(negbin.pUnder+bayes.pUnder)/2.0
-        )
-
-        val families=listOf(markov,distribution,driveMc)
-
-        val projection=families.map{it.projection}.average()
-        val pOverRaw=families.map{it.pOver}.average()
-        val pUnderRaw=families.map{it.pUnder}.average()
-        val pick=if(pOverRaw>=pUnderRaw)"OVER" else "UNDER"
-        val rawProb=max(pOverRaw,pUnderRaw)
-
-        val familySides=families.map{
-            if(it.pOver>=it.pUnder)"OVER" else "UNDER"
+        val w=doubleArrayOf(.30,.25,.20,.15,.10)
+        val projection=engines.indices.sumOf{i->engines[i].projection*w[i]}
+        val pOver=engines.indices.sumOf{i->engines[i].pOver*w[i]}
+        val pUnder=engines.indices.sumOf{i->engines[i].pUnder*w[i]}
+        val pick=if(pOver>=pUnder)"OVER" else "UNDER"
+        val prob=max(pOver,pUnder)
+        val agreement=engines.count{x->
+            val side=if(x.pOver>=x.pUnder)"OVER" else "UNDER"
+            side==pick
         }
-        val familyAgreement=familySides.count{it==pick}
-        val familyDispersion=families.maxOf{it.projection}-families.minOf{it.projection}
-
-        val sampleGames=minOf(awayRaw?.games ?: 0,homeRaw?.games ?: 0)
-        val sampleMaturity=if(sampleGames<=0)0.0
-        else sampleGames.toDouble()/(sampleGames+2.0)
-
-        val dispersionMaturity=(
-            1.0-(familyDispersion/18.0)*.35
-        ).coerceIn(.60,1.0)
-
-        var prob=.50+(rawProb-.50)*sampleMaturity*dispersionMaturity
-        val confidenceCap=if(sampleGames<5).66 else .70
-        prob=prob.coerceIn(.50,confidenceCap)
-
-        val edge=abs(projection-line)
-        val guardedEdge=edge*(.55+.45*sampleMaturity)
-
-        val marketExtremeGuard=
-            (pick=="UNDER" && line>=49.5 && edge>=4.5) ||
-            (pick=="OVER" && line<=40.5 && edge>=3.5)
-
+        val edge=kotlin.math.abs(projection-line)
+        val sampleGames=kotlin.math.min(away.games,home.games)
         val classification=when {
             sampleGames==0 -> "PASS · NO SAMPLE"
-            familyDispersion>=9.0 -> "PASS · DISPERSION"
-            marketExtremeGuard -> "PASS · MARKET GUARD"
+            sampleGames<3 && prob>=.62 && agreement>=4 && edge>=2.0 -> "LEAN · EARLY"
             sampleGames<3 -> "PASS · EARLY"
-            familyAgreement<2 -> "PASS · SPLIT"
-            prob>=.62 && familyAgreement==3 && guardedEdge>=3.0 && familyDispersion<5.5 ->
-                "JUGABLE ★"
-            prob>=.55 && familyAgreement>=2 && guardedEdge>=1.5 ->
-                "LEAN"
+            prob>=.66 && agreement>=4 && edge>=2.5 -> "JUGABLE ★"
+            prob>=.60 && agreement>=3 && edge>=1.5 -> "LEAN"
             else -> "PASS"
         }
-
         return Prediction(
-            gameId=game.gameId,
-            season=game.season,
-            week=game.week,
-            awayTeam=game.awayTeam,
-            homeTeam=game.homeTeam,
-            line=line,
-            pick=pick,
-            probability=prob,
-            projection=projection,
-            classification=classification,
-            engines=engines
+            gameId=game.gameId,season=game.season,week=game.week,awayTeam=game.awayTeam,homeTeam=game.homeTeam,
+            line=line,pick=pick,probability=prob,projection=projection,classification=classification,engines=engines
         )
     }
 
     private fun shrink(m:TeamMetrics,team:String):TeamMetrics{
-        val playWeight=m.plays.toDouble()/(m.plays+180.0)
-        val driveWeight=m.drives.toDouble()/(m.drives+16.0)
+        val playWeight=m.plays.toDouble()/(m.plays+300.0)
+        val driveWeight=m.drives.toDouble()/(m.drives+24.0)
         fun blend(x:Double,prior:Double,w:Double)=prior*(1-w)+x*w
-
         return m.copy(
             team=team,
             offEpaPerPlay=blend(m.offEpaPerPlay,0.0,playWeight),
@@ -123,15 +67,11 @@ class TotalsEngine(private val simulations:Int=100_000) {
             turnoverRate=blend(m.turnoverRate,.018,playWeight),
             tdPerDrive=blend(m.tdPerDrive,.22,driveWeight),
             fgPerDrive=blend(m.fgPerDrive,.15,driveWeight),
-            drivesPerGame=blend(m.drivesPerGame,10.6,driveWeight),
-            pointsPerDrive=blend(m.pointsPerDrive,2.05,driveWeight)
+            drivesPerGame=blend(m.drivesPerGame,10.6,driveWeight)
         )
     }
 
-    private fun markov(
-        line:Double,da:Double,dh:Double,a:TeamMetrics,h:TeamMetrics,
-        epaA:Double,epaH:Double
-    ):EngineSlice{
+    private fun markov(line:Double,da:Double,dh:Double,a:TeamMetrics,h:TeamMetrics,epaA:Double,epaH:Double):EngineSlice{
         var over=0; var under=0; var sum=0.0
         repeat(simulations){
             val sa=simulateDrives(sampleDrives(da),a,epaA)
@@ -139,27 +79,18 @@ class TotalsEngine(private val simulations:Int=100_000) {
             val t=sa+sh; sum+=t
             if(t>line)over++ else if(t<line)under++
         }
-        return EngineSlice(
-            "Markov Drive",sum/simulations,
-            over.toDouble()/simulations,under.toDouble()/simulations
-        )
+        return EngineSlice("Markov Drive",sum/simulations,over.toDouble()/simulations,under.toDouble()/simulations)
     }
 
-    private fun driveMonteCarlo(
-        line:Double,da:Double,dh:Double,ppdA:Double,ppdH:Double,
-        a:TeamMetrics,h:TeamMetrics
-    ):EngineSlice{
+    private fun driveMonteCarlo(line:Double,da:Double,dh:Double,ppdA:Double,ppdH:Double,a:TeamMetrics,h:TeamMetrics):EngineSlice{
         var over=0; var under=0; var sum=0.0
         repeat(simulations){
             val sa=simulatePpdDrives(sampleDrives(da),ppdA,a.turnoverRate)
             val sh=simulatePpdDrives(sampleDrives(dh),ppdH,h.turnoverRate)
-            val t=sa+sh; sum+=t
+            val t=sa+sh;sum+=t
             if(t>line)over++ else if(t<line)under++
         }
-        return EngineSlice(
-            "Drive Monte Carlo",sum/simulations,
-            over.toDouble()/simulations,under.toDouble()/simulations
-        )
+        return EngineSlice("Drive Monte Carlo",sum/simulations,over.toDouble()/simulations,under.toDouble()/simulations)
     }
 
     private fun negativeBinomial(line:Double,meanA:Double,meanH:Double):EngineSlice{
@@ -168,10 +99,7 @@ class TotalsEngine(private val simulations:Int=100_000) {
             val t=negBin(meanA,7.0)+negBin(meanH,7.0);sum+=t
             if(t>line)over++ else if(t<line)under++
         }
-        return EngineSlice(
-            "Negative Binomial",sum/simulations,
-            over.toDouble()/simulations,under.toDouble()/simulations
-        )
+        return EngineSlice("Negative Binomial",sum/simulations,over.toDouble()/simulations,under.toDouble()/simulations)
     }
 
     private fun bayesian(line:Double,mu:Double):EngineSlice{
@@ -180,10 +108,7 @@ class TotalsEngine(private val simulations:Int=100_000) {
             val t=max(0.0,mu+gaussian()*12.3);sum+=t
             if(t>line)over++ else if(t<line)under++
         }
-        return EngineSlice(
-            "Bayesian",sum/simulations,
-            over.toDouble()/simulations,under.toDouble()/simulations
-        )
+        return EngineSlice("Bayesian",sum/simulations,over.toDouble()/simulations,under.toDouble()/simulations)
     }
 
     private fun poissonShadow(line:Double,mu:Double):EngineSlice{
@@ -192,14 +117,10 @@ class TotalsEngine(private val simulations:Int=100_000) {
             val t=poisson(mu).toDouble();sum+=t
             if(t>line)over++ else if(t<line)under++
         }
-        return EngineSlice(
-            "Shadow Poisson",sum/simulations,
-            over.toDouble()/simulations,under.toDouble()/simulations
-        )
+        return EngineSlice("Shadow Poisson",sum/simulations,over.toDouble()/simulations,under.toDouble()/simulations)
     }
 
-    private fun sampleDrives(mu:Double)=
-        round(mu+gaussian()*1.15).toInt().coerceIn(7,16)
+    private fun sampleDrives(mu:Double)=round(mu+gaussian()*1.15).toInt().coerceIn(7,16)
 
     private fun simulateDrives(n:Int,m:TeamMetrics,epa:Double):Int{
         val td=(m.tdPerDrive + epa*.28).coerceIn(.08,.42)
@@ -217,33 +138,23 @@ class TotalsEngine(private val simulations:Int=100_000) {
         return s
     }
 
-    private fun simulatePpdDrives(
-        n:Int,ppd:Double,turnoverRate:Double
-    ):Int{
+    private fun simulatePpdDrives(n:Int,ppd:Double,turnoverRate:Double):Int{
+        val td=(ppd/7.0*.67).coerceIn(.08,.38)
+        val fg=(ppd/3.0*.25).coerceIn(.06,.28)
+
+        // nflverse entrega turnovers / jugada; el simulador trabaja por drive.
         val perPlayTurnover=turnoverRate.coerceIn(.002,.06)
-        val turnoverPerDrive=(
-            1.0-(1.0-perPlayTurnover).pow(6.2)
-        ).coerceIn(.01,.30)
-
-        val nonTurnover=(1.0-turnoverPerDrive).coerceAtLeast(.70)
-
-        var tdConditional=(ppd*.72/7.0/nonTurnover)
-        var fgConditional=(ppd*.28/3.0/nonTurnover)
-
-        val scoreMass=tdConditional+fgConditional
-        if(scoreMass>.96){
-            val scale=.96/scoreMass
-            tdConditional*=scale
-            fgConditional*=scale
-        }
+        val turnoverPerDrive=(1.0-(1.0-perPlayTurnover).pow(6.2)).coerceIn(.01,.30)
 
         var s=0
         repeat(n){
-            if(rng.nextDouble()<turnoverPerDrive)return@repeat
+            if(rng.nextDouble() < turnoverPerDrive) return@repeat
+
+            // Sorteo independiente para el resultado del drive.
             val outcome=rng.nextDouble()
             when {
-                outcome<tdConditional -> s+=7
-                outcome<tdConditional+fgConditional -> s+=3
+                outcome<td -> s+=7
+                outcome<td+fg -> s+=3
             }
         }
         return s
@@ -255,7 +166,7 @@ class TotalsEngine(private val simulations:Int=100_000) {
     }
 
     private fun gamma(shape:Double,scale:Double):Double{
-        if(shape<1)return gamma(shape+1,scale)*rng.nextDouble().pow(1.0/shape)
+        if(shape<1) return gamma(shape+1,scale)*rng.nextDouble().pow(1.0/shape)
         val d=shape-1.0/3.0
         val c=1.0/sqrt(9*d)
         while(true){
