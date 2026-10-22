@@ -44,5 +44,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V1.0-Core-Rebuild
+          name: NFL-Totals-Lab-V1.0.1-DataVault-Restore
           path: app/build/outputs/apk/debug/app-debug.apk

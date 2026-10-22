@@ -91,7 +91,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V1.0 · CORE REBUILD + SHADOW LAB",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V1.0.1 · CORE REBUILD + VAULT RESTORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -124,7 +124,7 @@ fun NflTotalsApp(context:Context){
                     val g=selectedGame!!
                     val gamePreds=preds.filter{it.gameId==g.gameId}
                     val p=gamePreds
-                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="0.9.0-integrity"}
+                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="1.0.0-core-rebuild"}
                         .maxByOrNull{it.createdAt}
                         ?: gamePreds.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt}
                         ?: gamePreds.maxByOrNull{it.createdAt}
@@ -194,7 +194,15 @@ fun NflTotalsApp(context:Context){
                     games.firstOrNull{it.gameId==p.gameId}?.let{selectedGame=it}
                 }
                 main==MainTab.EQUIPOS->TeamsScreen(metrics)
-                main==MainTab.AJUSTES->SettingsScreen(season,repo.lastSync(),onSeason={season=it;refresh()},onBuildVault={repo.exportDataVault(season)})
+                main==MainTab.AJUSTES->SettingsScreen(
+                    season=season,
+                    lastSync=repo.lastSync(),
+                    onSeason={season=it;refresh()},
+                    onBuildVault={repo.exportDataVault(season)},
+                    onPreviewVault={repo.previewDataVault(it)},
+                    onImportVault={repo.importDataVault(it)},
+                    onImported={refresh()}
+                )
             }
         }
     }
@@ -1509,11 +1517,18 @@ private fun SettingsScreen(
     season:Int,
     lastSync:Long?,
     onSeason:(Int)->Unit,
-    onBuildVault:()->String
+    onBuildVault:()->String,
+    onPreviewVault:(String)->VaultImportPreview,
+    onImportVault:suspend (String)->VaultRestoreResult,
+    onImported:()->Unit
 ){
     val localContext=LocalContext.current
+    val scope=rememberCoroutineScope()
     var pendingVault by remember{mutableStateOf<String?>(null)}
     var vaultStatus by remember{mutableStateOf<String?>(null)}
+    var pendingImport by remember{mutableStateOf<String?>(null)}
+    var importPreview by remember{mutableStateOf<VaultImportPreview?>(null)}
+    var importing by remember{mutableStateOf(false)}
 
     val vaultLauncher=rememberLauncherForActivityResult(
         contract=ActivityResultContracts.CreateDocument("application/json")
@@ -1536,6 +1551,133 @@ private fun SettingsScreen(
         pendingVault=null
     }
 
+    val importLauncher=rememberLauncherForActivityResult(
+        contract=ActivityResultContracts.OpenDocument()
+    ){uri->
+        if(uri==null){
+            vaultStatus="Importación cancelada"
+        }else{
+            runCatching{
+                localContext.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()
+                    ?.use{it.readText()}
+                    ?: error("No se pudo abrir el Data Vault")
+            }.onSuccess{raw->
+                runCatching{onPreviewVault(raw)}
+                    .onSuccess{preview->
+                        pendingImport=raw
+                        importPreview=preview
+                        vaultStatus="Data Vault validado ✓"
+                    }
+                    .onFailure{
+                        pendingImport=null
+                        importPreview=null
+                        vaultStatus="Vault inválido: ${it.message}"
+                    }
+            }.onFailure{
+                vaultStatus="Error leyendo Vault: ${it.message}"
+            }
+        }
+    }
+
+    importPreview?.let{preview->
+        AlertDialog(
+            onDismissRequest={
+                if(!importing){
+                    importPreview=null
+                    pendingImport=null
+                }
+            },
+            title={
+                Text("RESTORE DATA VAULT",fontWeight=FontWeight.Black)
+            },
+            text={
+                Column(verticalArrangement=Arrangement.spacedBy(4.dp)){
+                    Text(
+                        "${preview.schema} · App ${preview.appVersion}",
+                        fontSize=10.sp,color=Muted
+                    )
+                    Text(
+                        "Season ${preview.season} · Core ${preview.currentModelVersion}",
+                        fontSize=11.sp,fontWeight=FontWeight.Bold
+                    )
+                    HorizontalDivider(
+                        Modifier.padding(vertical=6.dp),
+                        color=Border
+                    )
+                    Text(
+                        "Games ${preview.games} · Metrics ${preview.metrics}",
+                        fontSize=10.sp
+                    )
+                    Text(
+                        "Core ${preview.predictions} · Shadow ${preview.shadows} · Cal ${preview.calibrations}",
+                        fontSize=10.sp
+                    )
+                    Text(
+                        "Features ${preview.matchupFeatures} · Snapshots ${preview.matchupSnapshots}",
+                        fontSize=10.sp
+                    )
+                    Text(
+                        "Team Score ${preview.matchupScores} · Bets ${preview.bets} · Bank ${preview.bank}",
+                        fontSize=10.sp
+                    )
+                    if(preview.modelVersions.isNotEmpty()){
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            "Generaciones: ${preview.modelVersions.joinToString(", ")}",
+                            fontSize=9.sp,color=Muted
+                        )
+                    }
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        "MERGE SEGURO: agrega lo que falta y omite filas que ya existen. No borra la base actual.",
+                        fontSize=10.sp,
+                        color=Green,
+                        fontWeight=FontWeight.Bold
+                    )
+                }
+            },
+            confirmButton={
+                Button(
+                    enabled=!importing,
+                    onClick={
+                        val raw=pendingImport
+                        if(raw!=null){
+                            importing=true
+                            scope.launch{
+                                runCatching{onImportVault(raw)}
+                                    .onSuccess{result->
+                                        vaultStatus=result.shortSummary()
+                                        onImported()
+                                        importPreview=null
+                                        pendingImport=null
+                                    }
+                                    .onFailure{
+                                        vaultStatus="IMPORT ERROR · rollback: ${it.message}"
+                                    }
+                                importing=false
+                            }
+                        }
+                    }
+                ){
+                    Text(if(importing)"IMPORTANDO…" else "IMPORTAR / MERGE")
+                }
+            },
+            dismissButton={
+                OutlinedButton(
+                    enabled=!importing,
+                    onClick={
+                        importPreview=null
+                        pendingImport=null
+                    }
+                ){
+                    Text("CANCELAR")
+                }
+            },
+            containerColor=Panel
+        )
+    }
+
     Column(Modifier.fillMaxSize().padding(14.dp)){
         Text("AJUSTES",fontWeight=FontWeight.Black,fontSize=20.sp)
         Spacer(Modifier.height(10.dp))
@@ -1550,11 +1692,11 @@ private fun SettingsScreen(
                 }
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
 
-                Text("CORE · INTEGRITY GATE",color=Muted,fontSize=10.sp)
-                Text("Markov 30% · NegBin 25% · Drive MC 20% · Bayesian 15% · Poisson 10%",fontSize=12.sp)
+                Text("CORE V1 · FAMILIAS INDEPENDIENTES",color=Muted,fontSize=10.sp)
+                Text("Markov 33% · Distribution (NegBin+Bayes) 33% · Drive MC 33%",fontSize=12.sp)
                 Spacer(Modifier.height(6.dp))
-                Text("100,000 simulaciones por motor",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
-                Text("JUGABLE exige probabilidad + acuerdo entre motores + edge. Con menos de 3 juegos por equipo se limita la confianza.",color=Muted,fontSize=10.sp)
+                Text("Poisson = diagnóstico · Confidence + Dispersion Guard",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("El Core ya no cuenta motores correlacionados como votos independientes.",color=Muted,fontSize=10.sp)
 
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("APRENDIZAJE SHADOW",color=Muted,fontSize=10.sp)
@@ -1576,8 +1718,51 @@ private fun SettingsScreen(
                     },
                     modifier=Modifier.fillMaxWidth(),
                     colors=ButtonDefaults.buttonColors(containerColor=Blue)
-                ){Text("EXPORT DATA VAULT JSON",fontWeight=FontWeight.Black,fontSize=10.sp)}
-                vaultStatus?.let{Text(it,color=if(it.contains("✓"))Green else Amber,fontSize=10.sp,modifier=Modifier.padding(top=7.dp))}
+                ){
+                    Text(
+                        "EXPORT DATA VAULT JSON",
+                        fontWeight=FontWeight.Black,
+                        fontSize=10.sp
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick={
+                        importLauncher.launch(
+                            arrayOf(
+                                "application/json",
+                                "text/plain",
+                                "application/octet-stream"
+                            )
+                        )
+                    },
+                    enabled=!importing,
+                    modifier=Modifier.fillMaxWidth()
+                ){
+                    Text(
+                        "IMPORT / RESTORE DATA VAULT",
+                        fontWeight=FontWeight.Black,
+                        fontSize=10.sp
+                    )
+                }
+
+                Text(
+                    "Restore usa MERGE transaccional: si falla, hace rollback y no deja media base importada.",
+                    color=Muted,
+                    fontSize=9.sp,
+                    modifier=Modifier.padding(top=5.dp)
+                )
+
+                vaultStatus?.let{
+                    Text(
+                        it,
+                        color=if(it.contains("✓"))Green else Amber,
+                        fontSize=10.sp,
+                        modifier=Modifier.padding(top=7.dp)
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(lastSync?.let{"Último sync: "+Date(it).toString()} ?: "Aún no sincronizado",color=Muted,fontSize=10.sp)
             }

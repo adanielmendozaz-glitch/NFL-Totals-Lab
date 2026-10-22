@@ -23,7 +23,7 @@ object DataVaultExporter {
         root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V4")
         root.put("exported_at",System.currentTimeMillis())
         root.put("season",season)
-        root.put("app_version","1.0.0")
+        root.put("app_version","1.0.1")
         root.put("current_model_version","1.0.0-core-rebuild")
         root.put("last_sync",lastSync ?: JSONObject.NULL)
         root.put("last_deep_sync",lastDeepSync ?: JSONObject.NULL)

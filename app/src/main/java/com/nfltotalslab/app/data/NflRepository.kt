@@ -213,6 +213,14 @@ class NflRepository(
             lastDeepSync=lastDeepSync()
         )
 
+    fun previewDataVault(raw:String):VaultImportPreview =
+        DataVaultImporter.preview(raw)
+
+    suspend fun importDataVault(raw:String):VaultRestoreResult =
+        withContext(Dispatchers.IO){
+            DataVaultImporter.restore(db,raw)
+        }
+
     suspend fun rosterIntelligence(game:GameRecord,core:Prediction?):GameRosterIntelligence =
         withContext(Dispatchers.IO){
             val intel=rosterApi.fetchGameIntelligence(game)
