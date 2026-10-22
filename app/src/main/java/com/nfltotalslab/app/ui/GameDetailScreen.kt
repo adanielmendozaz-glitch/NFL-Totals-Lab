@@ -180,7 +180,7 @@ fun GameDetailScreen(
                             val markov=p.engines.firstOrNull{it.name=="Markov Drive"}
                             val negbin=p.engines.firstOrNull{it.name=="Negative Binomial"}
                             val bayes=p.engines.firstOrNull{it.name=="Bayesian"}
-                            val drive=p.engines.firstOrNull{it.name=="Drive Monte Carlo"}
+                            val drive=p.engines.firstOrNull{it.name=="Possession Monte Carlo V2"}
 
                             if(markov!=null && negbin!=null && bayes!=null && drive!=null){
                                 val distOver=(negbin.pOver+bayes.pOver)/2.0
@@ -200,15 +200,15 @@ fun GameDetailScreen(
                                     familyProjections.minOrNull()!!
 
                                 Text(
-                                    "CORE V1 · FAMILIAS INDEPENDIENTES",
+                                    "CORE V1.1 · FAMILIAS EFECTIVAS",
                                     color=DetailAmber,fontSize=9.sp,fontWeight=FontWeight.Black
                                 )
                                 Text(
-                                    "Markov 33% · Distribution(NB+Bayes) 33% · DriveMC 33%",
+                                    "Markov 33% · Distribution(NB+Bayes) 33% · Possession MC V2 33%",
                                     color=DetailMuted,fontSize=8.sp
                                 )
                                 Text(
-                                    "Acuerdo $familyAgree/3 · dispersión ${fmt1(familyDispersion)} pts · Poisson = diagnóstico",
+                                    "Acuerdo $familyAgree/3 · dispersión ${fmt1(familyDispersion)} pts · 3/3 <4 = Consensus Trap",
                                     color=DetailMuted,fontSize=9.sp,fontWeight=FontWeight.Bold
                                 )
                             }else{

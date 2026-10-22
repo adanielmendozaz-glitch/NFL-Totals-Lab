@@ -91,7 +91,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V1.0.1 · CORE REBUILD + VAULT RESTORE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V1.1 · DECISION REBUILD + PATTERN LAB",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -124,7 +124,7 @@ fun NflTotalsApp(context:Context){
                     val g=selectedGame!!
                     val gamePreds=preds.filter{it.gameId==g.gameId}
                     val p=gamePreds
-                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="1.0.0-core-rebuild"}
+                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="1.1.0-decision-rebuild"}
                         .maxByOrNull{it.createdAt}
                         ?: gamePreds.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt}
                         ?: gamePreds.maxByOrNull{it.createdAt}
@@ -1692,10 +1692,10 @@ private fun SettingsScreen(
                 }
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
 
-                Text("CORE V1 · FAMILIAS INDEPENDIENTES",color=Muted,fontSize=10.sp)
-                Text("Markov 33% · Distribution (NegBin+Bayes) 33% · Drive MC 33%",fontSize=12.sp)
+                Text("CORE V1.1 · DECISION REBUILD",color=Muted,fontSize=10.sp)
+                Text("Markov 33% · Distribution 33% · Possession MC V2 33%",fontSize=12.sp)
                 Spacer(Modifier.height(6.dp))
-                Text("Poisson = diagnóstico · Confidence + Dispersion Guard",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("Consensus Trap · Turnover Chaos · cap 62% · Pattern Shadows",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
                 Text("El Core ya no cuenta motores correlacionados como votos independientes.",color=Muted,fontSize=10.sp)
 
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)

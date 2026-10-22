@@ -20,28 +20,31 @@ object DataVaultExporter {
         lastDeepSync:Long?
     ):String{
         val root=JSONObject()
-        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V4")
+        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V5")
         root.put("exported_at",System.currentTimeMillis())
         root.put("season",season)
-        root.put("app_version","1.0.1")
-        root.put("current_model_version","1.0.0-core-rebuild")
+        root.put("app_version","1.1.0")
+        root.put("current_model_version","1.1.0-decision-rebuild")
         root.put("last_sync",lastSync ?: JSONObject.NULL)
         root.put("last_deep_sync",lastDeepSync ?: JSONObject.NULL)
 
         root.put("core_architecture",JSONObject().apply{
-            put("generation","1.0.0-core-rebuild")
+            put("generation","1.1.0-decision-rebuild")
             put("decision_families",JSONArray().apply{
                 put("Markov Drive")
                 put("Distribution Family = Negative Binomial + Bayesian")
-                put("Drive Monte Carlo · PPD corrected")
+                put("Possession Monte Carlo V2 · independent drive-state mu")
             })
             put("family_weights","equal 1/3 each")
             put("poisson_role","diagnostic only")
-            put("play_prior",180)
-            put("drive_prior",16)
-            put("confidence_cap_early",0.66)
-            put("dispersion_pass_threshold",9.0)
-            put("legacy_control_shadow","Core 0.9.0 Control")
+            put("confidence_cap",0.62)
+            put("consensus_trap","3/3 agreement + dispersion < 4 => PASS")
+            put("turnover_chaos","UNDER + combined turnoverRate >= .040 => PASS")
+            put("scoring_form","OVER + combined tdPerDrive >= .56 => LEAN tag")
+            put("jugable_policy","Core alone cannot issue JUGABLE; Decision Engine V2 requires independent Matchup confirmation")
+            put("pattern_contrarians","Shadow only")
+            put("control_shadow_v10","Core 1.0.0 Control")
+            put("control_shadow_v09","Core 0.9.0 Control")
         })
 
         val official=predictions.filter{it.analysisSource=="AUTO_CENSUS"}

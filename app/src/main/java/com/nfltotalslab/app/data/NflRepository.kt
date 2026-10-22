@@ -6,6 +6,8 @@ import com.nfltotalslab.app.model.AdaptiveEnsembleShadow
 import com.nfltotalslab.app.model.RosterAdjustmentShadow
 import com.nfltotalslab.app.model.MatchupScoreLab
 import com.nfltotalslab.app.model.TotalsEngine
+import com.nfltotalslab.app.model.CoreV10ControlEngine
+import com.nfltotalslab.app.model.DecisionEngineV2
 import com.nfltotalslab.app.model.LegacyTotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
@@ -17,10 +19,11 @@ class NflRepository(
     private val api:NflverseService=NflverseService()
 ){
     private val engine=TotalsEngine(100_000)
+    private val v10ControlEngine=CoreV10ControlEngine(100_000)
     private val legacyEngine=LegacyTotalsEngine(100_000)
     private val rosterApi=EspnRosterService()
     private val matchupApi=MatchupFeatureService()
-    private val modelVersion="1.0.0-core-rebuild"
+    private val modelVersion="1.1.0-decision-rebuild"
     private val deepCacheMs=4L*60L*60L*1000L
     private val matchupCacheMs=12L*60L*60L*1000L
 
@@ -387,6 +390,7 @@ class NflRepository(
         val metricMap=metrics.associateBy{it.team}
         val cores=db.loadPredictions()
         val shadowHistory=db.loadShadowPredictions()
+        val matchupByGame=db.loadMatchupScoreCensus().associateBy{it.gameId}
         val candidates=schedule.filter{
             it.gameType=="REG" &&
             it.week==week &&
@@ -404,6 +408,36 @@ class NflRepository(
                 it.analysisSource=="AUTO_CENSUS" &&
                 it.inputKey==key
             } ?: return@forEach
+
+            // A/B control: Core V1.0 exacto, sólo Shadow.
+            val v10=v10ControlEngine.predict(
+                game,
+                metricMap[game.awayTeam],
+                metricMap[game.homeTeam]
+            )
+            val v10Shadow=ShadowPrediction(
+                id=core.id*100L+89L,
+                gameId=core.gameId,
+                season=core.season,
+                week=core.week,
+                awayTeam=core.awayTeam,
+                homeTeam=core.homeTeam,
+                line=core.line,
+                modelName="Core 1.0.0 Control",
+                pick=v10.pick,
+                probability=v10.probability,
+                projection=v10.projection,
+                inputKey="${core.inputKey}|CORE_V1_0_CONTROL",
+                createdAt=core.createdAt
+            )
+            if(!db.hasShadowPrediction(
+                    v10Shadow.gameId,
+                    v10Shadow.modelName,
+                    v10Shadow.inputKey
+                )){
+                db.saveShadowPrediction(v10Shadow)
+                count++
+            }
 
             // A/B control: Core V0.9 exacto, sólo Shadow.
             val legacyCore=legacyEngine.predict(
@@ -456,6 +490,19 @@ class NflRepository(
             }
 
             AdaptiveEnsembleShadow.fromCore(core,shadowHistory)?.let{x->
+                if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
+                    db.saveShadowPrediction(x)
+                    count++
+                }
+            }
+
+            DecisionEngineV2.fromCore(
+                game=game,
+                core=core,
+                away=metricMap[game.awayTeam],
+                home=metricMap[game.homeTeam],
+                matchup=matchupByGame[game.gameId]
+            ).forEach{x->
                 if(!db.hasShadowPrediction(x.gameId,x.modelName,x.inputKey)){
                     db.saveShadowPrediction(x)
                     count++
