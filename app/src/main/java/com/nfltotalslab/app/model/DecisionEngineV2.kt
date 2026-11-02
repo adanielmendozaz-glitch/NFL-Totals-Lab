@@ -54,7 +54,7 @@ object DecisionEngineV2 {
             matchupConfirms &&
             (agreement==2 || scoringForm)
         ){
-            val probability=max(core.probability,matchup!!.probability).coerceIn(.55,.65)
+            val probability=core.probability.coerceIn(.50,.62) // Do not inflate on agreement
             out+=shadow(
                 core=core,
                 name="Decision Engine V2",
@@ -70,7 +70,7 @@ object DecisionEngineV2 {
                 core=core,
                 name="Pattern Shadow · Consensus Trap",
                 pick=if(core.pick=="OVER")"UNDER" else "OVER",
-                probability=.55,
+                probability=.50, // Unvalidated pattern: neutral confidence
                 projection=core.projection,
                 suffix="CONSENSUS_TRAP|A=$agreement|D=${fmt(dispersion)}"
             )
@@ -81,7 +81,7 @@ object DecisionEngineV2 {
                 core=core,
                 name="Pattern Shadow · Turnover Chaos",
                 pick="OVER",
-                probability=.55,
+                probability=.50, // Unvalidated pattern: neutral confidence
                 projection=core.projection,
                 suffix="TURNOVER_CHAOS|TO=${fmt(turnoverSum)}"
             )
