@@ -210,12 +210,8 @@ class TotalsEngine(private val simulations:Int=100_000) {
             val r=rng.nextDouble()
             when{
                 r<turnoverDrive -> {
-                    val chaosBoost=(chaos-.03).coerceAtLeast(0.0)
-                    val x=rng.nextDouble()
-                    when{
-                        x<(.045+chaosBoost*.55).coerceAtMost(.10) -> points+=7
-                        x<(.15+chaosBoost*1.10).coerceAtMost(.28) -> points+=3
-                    }
+                    // A turnover ends this offensive drive without offensive points.
+                    // Defensive return scores require a separate opponent-scoring model.
                 }
                 r<turnoverDrive+td -> points+=if(rng.nextDouble()<.94)7 else 6
                 r<turnoverDrive+td+fg -> points+=3

@@ -41,6 +41,9 @@ object AdaptiveEnsembleShadow {
 
         val sameGeneration=history.filter{
             it.inputKey.startsWith("${core.modelVersion}|") &&
+            (it.season < core.season || (it.season == core.season && it.week < core.week)) &&
+            it.gameId != core.gameId &&
+            it.createdAt < core.createdAt &&
             (it.result=="WIN" || it.result=="LOSS")
         }
 
