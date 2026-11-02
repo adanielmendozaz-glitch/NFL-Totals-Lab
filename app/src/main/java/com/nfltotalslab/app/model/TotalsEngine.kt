@@ -34,7 +34,7 @@ class TotalsEngine(private val simulations:Int=100_000) {
         val ppdH=(formulaPpdH*.75 + home.pointsPerDrive*.25).coerceIn(1.0,3.6)
 
         val markov=markov(line,drivesA,drivesH,away,home,epaA,epaH)
-        val negbin=negativeBinomial(line,drivesA*ppdA,drivesH*ppdH)
+        val negbin=negativeBinomial(line,drivesA*ppdA,drivesH*ppdH,away,home)
         val possession=possessionMonteCarlo(line,drivesA,drivesH,away,home,epaA,epaH)
         val bayes=bayesian(line,drivesA*ppdA+drivesH*ppdH)
         val poisson=poissonShadow(line,drivesA*ppdA+drivesH*ppdH)
@@ -220,10 +220,16 @@ class TotalsEngine(private val simulations:Int=100_000) {
         return points
     }
 
-    private fun negativeBinomial(line:Double,meanA:Double,meanH:Double):EngineSlice{
+    // V12_PHASE3: dispersion depends on observed sample size and scoring volatility.
+    // These are conservative priors, not fitted coefficients or proven betting edges.
+    private fun negativeBinomial(
+        line:Double, meanA:Double, meanH:Double, away:TeamMetrics, home:TeamMetrics
+    ):EngineSlice{
+        val kA=dispersionK(away)
+        val kH=dispersionK(home)
         var over=0;var under=0;var sum=0.0
         repeat(simulations){
-            val t=negBin(meanA,7.0)+negBin(meanH,7.0)
+            val t=negBin(meanA,kA)+negBin(meanH,kH)
             sum+=t
             if(t>line)over++ else if(t<line)under++
         }
@@ -231,6 +237,13 @@ class TotalsEngine(private val simulations:Int=100_000) {
             "Negative Binomial",sum/simulations,
             over.toDouble()/simulations,under.toDouble()/simulations
         )
+    }
+
+    private fun dispersionK(m:TeamMetrics):Double{
+        // Fewer games => wider predictive uncertainty; k increases with maturity.
+        val maturity=m.games.toDouble()/(m.games+6.0)
+        val explosiveness=((m.explosiveRate-.10)*20.0).coerceIn(-.7,.7)
+        return (5.0+6.0*maturity-2.0*explosiveness).coerceIn(4.0,12.0)
     }
 
     private fun bayesian(line:Double,mu:Double):EngineSlice{
@@ -262,20 +275,30 @@ class TotalsEngine(private val simulations:Int=100_000) {
     private fun sampleDrives(mu:Double)=
         round(mu+gaussian()*1.15).toInt().coerceIn(7,16)
 
+    // V12_PHASE3: explicit possession-state transitions (turnover, touchdown,
+    // field goal, safety, empty). Not yet a down-and-distance Markov chain.
     private fun simulateMarkovDrives(n:Int,m:TeamMetrics,epa:Double):Int{
-        val td=(m.tdPerDrive + epa*.28).coerceIn(.08,.42)
-        val fg=(m.fgPerDrive + epa*.07).coerceIn(.06,.28)
+        val turnoverDrive=(1.0-(1.0-m.turnoverRate.coerceIn(.002,.06)).pow(6.2))
+            .coerceIn(.015,.30)
+        var td=(m.tdPerDrive+epa*.28).coerceIn(.08,.42)
+        var fg=(m.fgPerDrive+epa*.07).coerceIn(.06,.28)
         val safety=.003
-        var s=0
+        val available=(1.0-turnoverDrive-safety).coerceAtLeast(.0)
+        if(td+fg>available){
+            val scale=available/(td+fg)
+            td*=scale;fg*=scale
+        }
+        var score=0
         repeat(n){
             val r=rng.nextDouble()
             when{
-                r<td -> s+=if(rng.nextDouble()<.94)7 else 6
-                r<td+fg -> s+=3
-                r<td+fg+safety -> s+=2
+                r<turnoverDrive -> Unit
+                r<turnoverDrive+td -> score+=if(rng.nextDouble()<.94)7 else 6
+                r<turnoverDrive+td+fg -> score+=3
+                r<turnoverDrive+td+fg+safety -> score+=2
             }
         }
-        return s
+        return score
     }
 
     private fun negBin(mean:Double,k:Double):Int{
