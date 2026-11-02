@@ -133,7 +133,8 @@ fun GameDetailScreen(
                         SectionTitle("SIMCAST 2D · EXPERIMENTAL")
                         Simcast2D(
                             game = game,
-                            prediction = simPrediction
+                            prediction = simPrediction,
+                            roster = roster
                         )
                     }
                 }
