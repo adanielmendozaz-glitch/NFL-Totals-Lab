@@ -54,14 +54,15 @@ object DecisionEngineV2 {
             matchupConfirms &&
             (agreement==2 || scoringForm)
         ){
+            val confirmedMatchup = requireNotNull(matchup) { "Matchup confirmation required" }
             val probability=core.probability.coerceIn(.50,.62) // Do not inflate on agreement
             out+=shadow(
                 core=core,
                 name="Decision Engine V2",
                 pick=core.pick,
                 probability=probability,
-                projection=(core.projection+matchup.totalProjection)/2.0,
-                suffix="QUALIFIED|A=$agreement|D=${fmt(dispersion)}|TO=${fmt(turnoverSum)}|TD=${fmt(tdDriveSum)}|M=${matchup.pick}"
+                projection=(core.projection+confirmedMatchup.totalProjection)/2.0,
+                suffix="QUALIFIED|A=$agreement|D=${fmt(dispersion)}|TO=${fmt(turnoverSum)}|TD=${fmt(tdDriveSum)}|M=${confirmedMatchup.pick}"
             )
         }
 
