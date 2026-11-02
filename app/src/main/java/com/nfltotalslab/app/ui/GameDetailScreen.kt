@@ -128,6 +128,16 @@ fun GameDetailScreen(
                     }
                 }
 
+                localPrediction?.let { simPrediction ->
+                    item {
+                        SectionTitle("SIMCAST 2D · EXPERIMENTAL")
+                        Simcast2D(
+                            game = game,
+                            prediction = simPrediction
+                        )
+                    }
+                }
+
                 localPrediction?.let{p->
                     item{
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
