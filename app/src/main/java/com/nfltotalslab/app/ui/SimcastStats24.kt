@@ -155,7 +155,25 @@ internal class SimcastStats24(private val away: String, private val home: String
                 .put("rushing_yards",rushYards).put("expected_pass_yards",expectedPass)
                 .put("expected_rush_yards",expectedRush).put("completions",completions).put("receptions",receptions))
         }
-        return JSONObject().put("schema", "simcast-v4-ledger-audit-experimental").put("audit",audit).put("game_key", gameKey)
+        // Independent score, clock and special-teams consistency checks.
+        var lastAway=0;var lastHome=0;var lastTime=-1
+        val issues=JSONArray()
+        for(i in 0 until eventArray.length()){
+            val ev=eventArray.getJSONObject(i)
+            val a=ev.optInt("away_score");val h=ev.optInt("home_score")
+            val delta=(a-lastAway)+(h-lastHome)
+            val time=ev.optInt("elapsed")
+            val kick=ev.optString("kind")=="Despeje" || ev.optString("kind")=="Intento de gol de campo"
+            if(a<lastAway || h<lastHome || delta !in listOf(0,3,6,7,8) ||
+                time<lastTime || (kick && ev.optInt("yards")!=0)){
+                issues.put(JSONObject().put("play",i+1).put("kind",ev.optString("kind"))
+                    .put("score_delta",delta).put("elapsed",time))
+            }
+            lastAway=a;lastHome=h;lastTime=time
+        }
+        return JSONObject().put("schema", "simcast-v4.1-ledger-audit-experimental")
+            .put("integrity_status",if(issues.length()==0)"PASS" else "FAIL")
+            .put("integrity_issues",issues).put("audit",audit).put("game_key", gameKey)
             .put("away", away).put("home", home).put("plays_processed", stop)
             .put("plays_total", plays.length()).put("final", stop == plays.length())
             .put("strengths", strengths).put("players", playerArray).put("events", eventArray)

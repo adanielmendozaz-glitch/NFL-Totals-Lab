@@ -53,6 +53,17 @@ internal object SimcastV3Engine {
             val rushShare=(rate(team,"rush_rate")?:.43).coerceIn(.25,.65)
             val pass=rng.nextDouble()<(if(down>=3).78 else 1.0-rushShare).coerceIn(.30,.86)
             val beforeField=field;val beforeDown=down;val beforeDistance=distance
+            // V4.1: decide special teams before generating an offensive play.
+            if(down==4 && (field>=62 || distance>2)){
+                val kick=if(field>=62) "Intento de gol de campo" else "Despeje"
+                val points=if(kick=="Intento de gol de campo" &&
+                    rng.nextDouble()<(.92-(100-field)*.012).coerceIn(.35,.9)) 3 else 0
+                elapsed+=min(rng.nextInt(5,12),3600-elapsed)
+                if(away)awayScore+=points else homeScore+=points
+                plays+=V3Play(away,field,field,down,distance,elapsed,kick,0,points,awayScore,homeScore)
+                away=!away;field=25;down=1;distance=10
+                continue
+            }
             val rusher=if(!pass)pick(rng,roster,setOf("RB","QB"),"$team RB") else null
             val target=if(pass)pick(rng,roster,setOf("WR","TE","RB"),"$team WR") else null
             val roll=rng.nextDouble();var yards=0;var kind="";var points=0;var switch=false
@@ -77,8 +88,7 @@ internal object SimcastV3Engine {
                 if(yards>=distance){down=1;distance=min(10,100-field)}
                 else{down++;distance=(distance-yards).coerceAtLeast(1)}
                 if(down>4){
-                    if(field>=62){kind="Intento de gol de campo";points=if(rng.nextDouble()<(.92-(100-field)*.012).coerceIn(.35,.9))3 else 0}
-                    else kind="Despeje"
+                    // Fourth-down offensive attempt: turnover on downs, not a kick.
                     switch=true
                 }
             }
