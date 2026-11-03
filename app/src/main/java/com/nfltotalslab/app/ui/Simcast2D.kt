@@ -179,7 +179,23 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
             OutlinedButton(onClick={speed=if(speed==4)1 else speed*2},contentPadding=PaddingValues(horizontal=7.dp)){Text("${speed}x")}
         }
         OutlinedButton(onClick={showNames=!showNames}){Text(if(showNames)"Ocultar etiquetas" else "Mostrar nombres / posiciones")}
-        OutlinedButton(onClick={testContext.startActivity(Intent(testContext,SimcastGdxTestActivity::class.java).apply{putExtra("away",game.awayTeam);putExtra("home",game.homeTeam);putExtra("playKind",p.kind);putExtra("yards",p.yards);putExtra("down",p.down);putExtra("distance",p.distance);putExtra("qb",qbName);putExtra("receiver",receiverName)})}){Text("Probar motor libGDX (pantalla separada)")}
+        OutlinedButton(onClick={
+            val serialized = org.json.JSONArray()
+            plays.forEach { sp ->
+                serialized.put(org.json.JSONObject().apply {
+                    put("a",sp.away); put("s",sp.start); put("f",sp.finish)
+                    put("d",sp.down); put("g",sp.distance); put("t",sp.elapsed)
+                    put("k",sp.kind); put("y",sp.yards)
+                    put("as",sp.awayScore); put("hs",sp.homeScore)
+                })
+            }
+            testContext.startActivity(Intent(testContext,SimcastGdxTestActivity::class.java).apply {
+                putExtra("away",game.awayTeam); putExtra("home",game.homeTeam)
+                putExtra("plays",serialized.toString())
+                putExtra("line",prediction.line.toDouble())
+                putExtra("qb",qbName); putExtra("receiver",receiverName); putExtra("runner",rbName)
+            })
+        }){Text("Abrir Simcast V1.9 · partido completo")}
         Text("EXPERIMENTAL: nombres proceden del roster si esta disponible; las asignaciones y rutas son ilustrativas, no tracking real. Motor sin calibracion historica. No altera Core, Ranking ni apuestas.",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
     }
 }
