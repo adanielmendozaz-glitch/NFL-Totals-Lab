@@ -27,7 +27,8 @@ internal class SimcastStats24(private val away: String, private val home: String
             val seed = Random((gameKey + ":" + i + ":v24").hashCode())
             val passer = choose(team, "QB", 0)
             val runner = choose(team, "RB", seed.nextInt(100))
-            val receiver = choose(team, "WR", seed.nextInt(100))
+            val targetPosition = when (seed.nextInt(100)) { in 0..59 -> "WR"; in 60..79 -> "TE"; else -> "RB" }
+            val receiver = choose(team, targetPosition, seed.nextInt(100))
             val event = JSONObject().put("play", i + 1).put("team", team).put("kind", kind)
                 .put("yards", yards).put("elapsed", p.optInt("t"))
                 .put("away_score", p.optInt("as")).put("home_score", p.optInt("hs"))
@@ -40,12 +41,12 @@ internal class SimcastStats24(private val away: String, private val home: String
                 if (!kind.contains("Sack", true)) inc(q, "pass_attempts", 1)
                 if (complete) {
                     inc(q, "completions", 1); inc(q, "passing_yards", yards)
-                    val r = stat(team, receiver, "WR")
+                    val r = stat(team, receiver, targetPosition)
                     inc(r, "targets", 1); inc(r, "receptions", 1); inc(r, "receiving_yards", yards)
-                    event.put("receiver", receiver)
+                    event.put("receiver", receiver).put("receiver_position", targetPosition)
                 } else if (kind.contains("Pase incompleto", true) || kind.contains("Intercepcion", true)) {
-                    inc(stat(team, receiver, "WR"), "targets", 1)
-                    event.put("receiver", receiver)
+                    inc(stat(team, receiver, targetPosition), "targets", 1)
+                    event.put("receiver", receiver).put("receiver_position", targetPosition)
                 }
                 if (kind.contains("Intercepcion", true)) inc(q, "interceptions", 1)
                 if (kind.contains("Sack", true)) inc(q, "sacks_taken", 1)
@@ -107,8 +108,8 @@ internal class SimcastStats24(private val away: String, private val home: String
                 if (k.contains("Sack", true)) add(qb, "QB", "sacks_taken", 1)
             }
             if (wr.isNotEmpty()) {
-                add(wr, "WR", "targets", 1)
-                if (k.contains("Pase completo", true)) { add(wr, "WR", "receptions", 1); add(wr, "WR", "receiving_yards", y) }
+                add(wr, e.optString("receiver_position", "WR"), "targets", 1)
+                if (k.contains("Pase completo", true)) { add(wr, e.optString("receiver_position", "WR"), "receptions", 1); add(wr, e.optString("receiver_position", "WR"), "receiving_yards", y) }
             }
             if (rb.isNotEmpty()) {
                 add(rb, "RB", "rush_attempts", 1); add(rb, "RB", "rushing_yards", y)
@@ -129,11 +130,12 @@ internal class SimcastStats24(private val away: String, private val home: String
         val report = report(until); val a = report.getJSONArray("players")
         val lines = mutableListOf<String>()
         for (team in listOf(away, home)) {
-            lines.add("$team  |  PASS / RUSH / REC (YD)")
+            lines.add("$team  |  PASS / RUSH / REC / TARGETS")
             for (i in 0 until a.length()) {
                 val p = a.getJSONObject(i)
                 if (p.getString("team") != team) continue
-                lines.add("${p.getString("player").take(20)}  P:${p.optInt("passing_yards")}  R:${p.optInt("rushing_yards")}  C:${p.optInt("receiving_yards")}")
+                if (p.optInt("pass_attempts") + p.optInt("rush_attempts") + p.optInt("targets") + p.optInt("sacks_taken") == 0) continue
+                lines.add("${p.getString("player").take(19)} P:${p.optInt("passing_yards")} R:${p.optInt("rushing_yards")} C:${p.optInt("receiving_yards")} T:${p.optInt("targets")}")
             }
         }
         return lines
