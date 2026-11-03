@@ -57,5 +57,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Totals-Lab-V1.1-Decision-Rebuild
+          name: NFL-Totals-Lab-V3.1-Pro-Stadium
           path: app/build/outputs/apk/debug/app-debug.apk

@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
 import com.nfltotalslab.app.data.DbHelper
 import com.nfltotalslab.app.data.TeamMetrics
+import com.nfltotalslab.app.data.MatchupFeature
 import com.nfltotalslab.app.data.GameRecord
 import com.nfltotalslab.app.data.Prediction
 import com.nfltotalslab.app.data.GameRosterIntelligence
@@ -25,57 +26,15 @@ import kotlinx.coroutines.delay
 import kotlin.math.*
 import kotlin.random.Random
 
-private data class SimPlay(val away:Boolean,val start:Int,val finish:Int,val down:Int,val distance:Int,val seconds:Int,val kind:String,val yards:Int,val points:Int,val awayScore:Int,val homeScore:Int,val elapsed:Int)
+private data class SimPlay(val away:Boolean,val start:Int,val finish:Int,val down:Int,val distance:Int,val seconds:Int,val kind:String,val yards:Int,val points:Int,val awayScore:Int,val homeScore:Int,val elapsed:Int,val passer:String="",val receiver:String="",val receiverPosition:String="",val rusher:String="")
 private val offenseRoles=listOf("QB","RB","LT","LG","C","RG","RT","WR","WR","TE","WR")
 private val defenseRoles=listOf("DE","DT","DT","DE","LB","LB","LB","CB","CB","S","S")
 
-private fun createPlays(game:GameRecord,prediction:Prediction,metrics:Map<String,TeamMetrics>):List<SimPlay>{
-    val rng=Random((game.gameId+":"+prediction.id+":v15").hashCode())
-    val result=mutableListOf<SimPlay>()
-    var elapsed=0;var awayScore=0;var homeScore=0;var away=true;var field=25;var down=1;var distance=10
-    while(elapsed<3600 && result.size<230){
-        val beforeDown=down;val beforeDistance=distance;val start=field
-        val offense=metrics[if(away)game.awayTeam else game.homeTeam]?.takeIf{it.games>=2}
-        val defense=metrics[if(away)game.homeTeam else game.awayTeam]?.takeIf{it.games>=2}
-        val epaEdge=if(offense!=null && defense!=null) (offense.offEpaPerPlay-defense.defEpaAllowedPerPlay).coerceIn(-0.5,0.5) else 0.0
-        val pass=rng.nextDouble()<((if(down>=3).68 else .54)+epaEdge*.10).coerceIn(.35,.82)
-        val roll=rng.nextDouble()
-        var kind:String;var yards:Int;var points=0;var change=false
-        if(pass){
-            when{
-                roll<.027->{kind="Intercepcion";yards=0;change=true}
-                roll<.105->{kind="Sack";yards=-rng.nextInt(2,10)}
-                roll<(.42-epaEdge*.10).coerceIn(.29,.55)->{kind="Pase incompleto";yards=0}
-                else->{kind="Pase completo";yards=((rng.nextDouble()*rng.nextDouble()*44)*(1+epaEdge*.45)).toInt().coerceAtLeast(0)+1}
-            }
-        }else{
-            when{
-                roll<.012->{kind="Fumble";yards=0;change=true}
-                roll<.20->{kind="Carrera detenida";yards=-rng.nextInt(0,4)}
-                else->{kind="Carrera";yards=((rng.nextDouble()*rng.nextDouble()*19)*(1+epaEdge*.35)).toInt().coerceAtLeast(0)+1}
-            }
-        }
-        field=(field+yards).coerceIn(1,100)
-        if(field==100){kind="Touchdown";points=if(rng.nextDouble()<.94)7 else 6;change=true}
-        else if(!change){
-            if(yards>=distance){down=1;distance=min(10,100-field)}
-            else{down++;distance=(distance-yards).coerceAtLeast(1)}
-            if(down>4){
-                if(field>=63 && rng.nextDouble()<.85){
-                    kind="Intento de gol de campo"
-                    if(rng.nextDouble()<(.84-(100-field)*.005).coerceIn(.35,.90))points=3
-                }else kind="Despeje"
-                change=true
-            }
-        }
-        val seconds=if(kind=="Pase incompleto")rng.nextInt(5,12) else rng.nextInt(18,42)
-        elapsed+=min(seconds,3600-elapsed)
-        if(away)awayScore+=points else homeScore+=points
-        result+=SimPlay(away,start,field,beforeDown,beforeDistance,seconds,kind,yards,points,awayScore,homeScore,elapsed)
-        if(change){away=!away;field=if(kind=="Intercepcion"||kind=="Fumble")(100-field).coerceIn(5,95) else 25;down=1;distance=10}
-    }
-    return result
-}
+private fun createPlays(game:GameRecord,prediction:Prediction,metrics:Map<String,TeamMetrics>,
+    features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>):List<SimPlay> =
+    SimcastV3Engine.simulate(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":v3").hashCode(),metrics,features,rosters)
+        .map { SimPlay(it.away,it.start,it.finish,it.down,it.distance,0,it.kind,it.yards,it.points,
+            it.awayScore,it.homeScore,it.elapsed,it.passer,it.receiver,it.receiverPosition,it.rusher) }
 
 private fun playerName(roster:GameRosterIntelligence?,away:Boolean,role:String,index:Int):String{
     val team=if(away)roster?.away else roster?.home
@@ -88,7 +47,12 @@ private fun playerName(roster:GameRosterIntelligence?,away:Boolean,role:String,i
 fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligence?=null){
     val context=LocalContext.current
     val metrics=remember(game.gameId,game.season) { try { DbHelper(context).use { db -> db.loadMetrics(game.season).associateBy { it.team } } } catch (_:Exception) { emptyMap<String,TeamMetrics>() } }
-    val plays=remember(game.gameId,prediction.id,metrics){createPlays(game,prediction,metrics)}
+    val features=remember(game.gameId,game.season){try{DbHelper(context).use{it.loadMatchupFeatures(game.season)}}catch(_:Exception){emptyList<MatchupFeature>()}}
+    val rosterMap=remember(roster){ listOf(game.awayTeam to roster?.away,game.homeTeam to roster?.home).associate { (code,team) ->
+        code to (team?.players?.map{V3Athlete(it.name,it.position,it.coreStarter,it.depthRank,it.unavailable)} ?: emptyList()) } }
+    val plays=remember(game.gameId,prediction.id,metrics,features,rosterMap){createPlays(game,prediction,metrics,features,rosterMap)}
+    val props=remember(game.gameId,prediction.id,metrics,features,rosterMap){SimcastV3Engine.props(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":props").hashCode(),metrics,features,rosterMap)}
+    var showProps by remember { mutableStateOf(false) }
     var index by remember(game.gameId,prediction.id){mutableIntStateOf(0)}
     var playing by remember(game.gameId,prediction.id){mutableStateOf(false)}
     var speed by remember{mutableIntStateOf(1)}
@@ -112,7 +76,18 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val actor=if(p.kind.contains("Pase")||p.kind=="Sack"||p.kind=="Intercepcion")qbName else rbName
     val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("SIMCAST 2D V1.5 · VISTA TACTICA EXPERIMENTAL",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
+        Text("NFL SIMCAST V3 · INTELLIGENCE + MARKOV + MONTE CARLO",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
+        Text("DATOS ${game.season} · ${if(metrics[game.awayTeam]?.games ?: 0 >= 2 && metrics[game.homeTeam]?.games ?: 0 >= 2) "EPA registrado" else "EPA insuficiente: fallback"} · ${features.size} métricas matchup · ${rosterMap.values.sumOf{it.size}} jugadores",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
+        Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
+            listOf(game.awayTeam,game.homeTeam).forEach { code ->
+                val m=metrics[code]
+                Column(Modifier.weight(1f)){
+                    Text("$code · ${m?.games ?: 0} partidos",color=Color.White)
+                    Text("EPA OFF ${if(m!=null && m.games>=2)"%.3f".format(m.offEpaPerPlay) else "N/D"}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
+                    Text("EPA DEF ${if(m!=null && m.games>=2)"%.3f".format(m.defEpaAllowedPerPlay) else "N/D"}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         Text("${game.awayTeam} ${p.awayScore} — ${p.homeScore} ${game.homeTeam}   Q$quarter ${"%02d:%02d".format(remaining/60,remaining%60)}",color=Color.White)
         Text("$offenseTeam · ${p.down}° y ${p.distance} · Balon en yarda ${p.start}",color=Color(0xFFB7C5D6))
         Canvas(Modifier.fillMaxWidth().height(240.dp)){
@@ -180,7 +155,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
             drawContext.canvas.nativeCanvas.drawText(game.homeTeam,x(105f),h*.90f,paint)
         }
         Text("Jugada ${index+1}/${plays.size} · ${p.kind} · ${p.yards} yd${if(p.points>0)" · +${p.points} pts" else ""}",color=Color.White)
-        Text("Participantes ilustrativos: $actor${if(p.kind=="Pase completo")" → $receiverName" else ""}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
+        Text("Jugadores simulados: ${p.passer.ifBlank{p.rusher}}${if(p.receiver.isNotBlank())" → ${p.receiver}" else ""}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
             OutlinedButton(onClick={index=0;playing=false},contentPadding=PaddingValues(horizontal=7.dp)){Text("Inicio")}
             Button(onClick={if(index==plays.lastIndex)index=0;playing=!playing},contentPadding=PaddingValues(horizontal=7.dp)){Text(if(playing)"Pausa" else "Play")}
@@ -196,6 +171,8 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                     put("d",sp.down); put("g",sp.distance); put("t",sp.elapsed)
                     put("k",sp.kind); put("y",sp.yards)
                     put("as",sp.awayScore); put("hs",sp.homeScore)
+                    put("passer",sp.passer);put("receiver",sp.receiver);put("receiver_position",sp.receiverPosition);put("rusher",sp.rusher)
+                    put("points",sp.points)
                 })
             }
             testContext.startActivity(Intent(testContext,SimcastGdxTestActivity::class.java).apply {
@@ -206,6 +183,10 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 putExtra("awayColor",teamBrand(game.awayTeam).primary.toArgb())
                 putExtra("homeColor",teamBrand(game.homeTeam).primary.toArgb())
                 putExtra("simcastGameKey",game.gameId+":"+prediction.id)
+                putExtra("simcastProps",org.json.JSONArray().apply{props.forEach{v->put(org.json.JSONObject().apply{
+                    put("team",v.team);put("player",v.player);put("market",v.market);put("mean",v.mean)
+                    put("p10",v.p10);put("p50",v.median);put("p90",v.p90);put("n",v.sample)
+                })}}.toString())
                 putExtra("simcastStrengths",org.json.JSONObject().apply {
                     for(code in listOf(game.awayTeam,game.homeTeam)) {
                         val m=metrics[code]
@@ -217,16 +198,21 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                     }
                 }.toString())
                 putExtra("simcastRoster",org.json.JSONObject().apply {
-                    for ((code, team) in listOf(game.awayTeam to roster?.away, game.homeTeam to roster?.home)) {
+                    for (code in listOf(game.awayTeam,game.homeTeam)) {
                         put(code,org.json.JSONObject().put("players",org.json.JSONArray().apply {
-                            team?.players?.forEach { pl -> put(org.json.JSONObject()
+                            rosterMap[code].orEmpty().forEach { pl -> put(org.json.JSONObject()
                                 .put("name",pl.name).put("position",pl.position)
                                 .put("unavailable",pl.unavailable)) }
                         }))
                     }
                 }.toString())
             })
-        }){Text("Abrir Simcast 2.0 · Stadium")}
-        Text("EXPERIMENTAL: nombres proceden del roster si esta disponible; las asignaciones y rutas son ilustrativas, no tracking real. Motor sin calibracion historica. No altera Core, Ranking ni apuestas.",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
+        }){Text("ABRIR SIMCAST V3.1 · PRO STADIUM")}
+        OutlinedButton(onClick={showProps=!showProps}){Text(if(showProps)"Ocultar Player Props" else "Player Props · Monte Carlo (400)")}
+        if(showProps){
+            Text("400 simulaciones · línea de prueba P50+0.5 (NO es línea de mercado).",color=Color(0xFFFFC861))
+            props.take(18).forEach { v -> Text("${v.team} ${v.player.take(19)} ${v.market}: ${"%.1f".format(v.mean)} yd (${v.p10.toInt()}–${v.p90.toInt()}) · O ${"%.0f".format(v.pOver(v.median+0.5)*100)}%",color=Color.White,style=MaterialTheme.typography.bodySmall) }
+        }
+        Text("EXPERIMENTAL: nombres proceden del roster si esta disponible; las asignaciones y rutas son ilustrativas, no tracking real. Markov y Monte Carlo sin calibracion historica. No altera Core, Ranking ni apuestas.",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
     }
 }

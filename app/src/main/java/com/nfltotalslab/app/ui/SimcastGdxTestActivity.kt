@@ -20,6 +20,7 @@ import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.math.Vector3
 import org.json.JSONArray
+import org.json.JSONObject
 
 class SimcastGdxTestActivity : AndroidApplication() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,7 +33,8 @@ class SimcastGdxTestActivity : AndroidApplication() {
         try {
             val dir = java.io.File(filesDir,"simcast_reports").apply { mkdirs() }
             val key = (intent.getStringExtra("simcastGameKey") ?: "game").replace(Regex("[^A-Za-z0-9_-]"),"_")
-            java.io.File(dir,"${key}_v24.json").writeText(simcastStats.report(org.json.JSONArray(simcastRaw).length()).toString(2))
+            java.io.File(dir,"${key}_v30.json").writeText(simcastStats.report(org.json.JSONArray(simcastRaw).length())
+                .put("monte_carlo_props",org.json.JSONArray(intent.getStringExtra("simcastProps") ?: "[]")).toString(2))
         } catch (_: Exception) { }
         initialize(Broadcast22(
             intent.getStringExtra("away") ?: "AWAY",
@@ -57,9 +59,12 @@ private data class SimSnap(
 private class Broadcast22(
     private val away: String, private val home: String, raw: String,
     private val line: Float, private val qb: String, private val wr: String,
-    private val rb: String, awayArgb: Int, homeArgb: Int, private val stats: SimcastStats24
+    private val rb: String, awayArgb: Int, homeArgb: Int, private val stats: SimcastStats24,
+    propsRaw: String, strengthsRaw: String
 ) : ApplicationAdapter() {
     private val plays = mutableListOf<SimSnap>()
+    private val propRows = try { JSONArray(propsRaw) } catch (_:Exception) { JSONArray() }
+    private val teamStrengths = try { JSONObject(strengthsRaw) } catch (_:Exception) { JSONObject() }
     private lateinit var shapes: ShapeRenderer
     private lateinit var batch: SpriteBatch
     private lateinit var camera: OrthographicCamera
@@ -291,7 +296,7 @@ private class Broadcast22(
         text(clock, 658f, 85f, 70f)
         text("${p.down} & ${p.distance}", 922f, 77f, 45f, amber)
         text("POS ${if (p.away) away else home}", 541f, 132f, 33f, muted)
-        text("SIMCAST 2.3  |  GAMEPLAY", 38f, 204f, 30f, muted)
+        text("SIMCAST V3.1 | PRO STADIUM", 38f, 204f, 30f, muted)
         val total = p.awayScore + p.homeScore
         val needed = if (line > 0f) kotlin.math.floor((line - total).toDouble()).toInt() + 1 else 0
         text("TOTAL  $total", 574f, 205f, 37f)
@@ -311,20 +316,36 @@ private class Broadcast22(
         p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         p.color = android.graphics.Color.WHITE
         p.textSize = 40f
-        c.drawText("SIMCAST PLAYER PROPS - $until/${plays.size}", 34f, 55f, p)
+        c.drawText("V3.1 | PLAYER INTELLIGENCE - $until/${plays.size}", 34f, 55f, p)
         p.textSize = 26f
         p.color = 0xFFFFCD63.toInt()
         c.drawText("SIMULACION · NO SON RESULTADOS REALES", 34f, 94f, p)
         p.color = android.graphics.Color.WHITE
-        p.textSize = 28f
+        p.textSize = 23f
         var y = 139f
-        for (row in stats.summary(until).take(16)) {
-            c.drawText(row.take(73), 35f, y, p)
-            y += 31f
+        for (row in stats.summary(until).take(12)) {
+            c.drawText(row.take(43), 35f, y, p)
+            y += 35f
         }
+        // A second column exposes the exact Monte Carlo projections sent by the Compose model.
+        p.color = 0xFF70DBDB.toInt()
+        p.textSize = 25f
+        c.drawText("MONTE CARLO | 400 CORRIDAS (NO CALIBRADO)", 620f, 140f, p)
+        p.color = android.graphics.Color.WHITE
         p.textSize = 22f
+        for (i in 0 until kotlin.math.min(propRows.length(), 12)) {
+            val v = propRows.optJSONObject(i) ?: continue
+            val label = "${v.optString("team")} ${v.optString("player").take(15)} ${v.optString("market")}" 
+            val statsLine = "MEDIA ${"%.1f".format(v.optDouble("mean"))} | P10 ${v.optInt("p10")} P50 ${v.optInt("p50")} P90 ${v.optInt("p90")}" 
+            val yy = 175f + i * 35f
+            c.drawText(label.take(48), 625f, yy, p)
+            c.drawText(statsLine, 625f, yy + 18f, p.apply { textSize = 17f })
+            p.textSize = 22f
+        }
+        p.textSize = 20f
         p.color = 0xFFB4C4D7.toInt()
-        c.drawText("Toca arriba a la derecha para cerrar | JSON en simcast_reports", 34f, 622f, p)
+        c.drawText("Datos locales: ${away} ${teamStrengths.optJSONObject(away)?.optInt("sample_games") ?: 0} juegos / ${home} ${teamStrengths.optJSONObject(home)?.optInt("sample_games") ?: 0} juegos", 34f, 592f, p)
+        c.drawText("Cerrar arriba a la derecha | JSON en simcast_reports", 34f, 622f, p)
         return textureFrom(bmp)
     }
 

@@ -1,0 +1,104 @@
+package com.nfltotalslab.app.ui
+
+import com.nfltotalslab.app.data.TeamMetrics
+import com.nfltotalslab.app.data.MatchupFeature
+import kotlin.math.*
+import kotlin.random.Random
+
+/** Experimental possession model. Every player statistic is derived from the same play stream. */
+internal data class V3Play(val away:Boolean,val start:Int,val finish:Int,val down:Int,val distance:Int,
+    val elapsed:Int,val kind:String,val yards:Int,val points:Int,val awayScore:Int,val homeScore:Int,
+    val passer:String="",val receiver:String="",val receiverPosition:String="",val rusher:String="")
+internal data class V3Athlete(val name:String,val position:String,val starter:Boolean,val depth:Int,val unavailable:Boolean)
+internal data class V3Prop(val team:String,val player:String,val market:String,val mean:Double,
+    val p10:Double,val median:Double,val p90:Double,val sample:Int,val draws:IntArray) {
+    fun pOver(line:Double):Double=draws.count{it>line}.toDouble()/draws.size.coerceAtLeast(1)
+}
+internal object SimcastV3Engine {
+    private fun pick(r:Random, athletes:List<V3Athlete>, positions:Set<String>,fallback:String):V3Athlete {
+        val candidates=athletes.filter { !it.unavailable && it.position.uppercase() in positions }
+            .sortedWith(compareBy<V3Athlete> { !it.starter }.thenBy { it.depth })
+        if(candidates.isEmpty())return V3Athlete(fallback,positions.first(),true,1,false)
+        val weights=candidates.mapIndexed { i,a -> (if(a.starter) 5.0 else 1.5)/(1+i*.85) }
+        val target=r.nextDouble()*weights.sum();var sum=0.0
+        for(i in candidates.indices){sum+=weights[i];if(target<=sum)return candidates[i]}
+        return candidates.last()
+    }
+    fun simulate(awayCode:String,homeCode:String,seed:Int,metrics:Map<String,TeamMetrics>,
+                 features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>):List<V3Play>{
+        val rng=Random(seed);val plays=ArrayList<V3Play>();var elapsed=0;var away=true
+        var awayScore=0;var homeScore=0;var field=25;var down=1;var distance=10
+        val featureMap=features.groupBy { it.team }
+        fun rate(team:String,key:String):Double? = featureMap[team]?.firstOrNull{it.feature==key && it.sampleN>=20}?.value
+        while(elapsed<3600 && plays.size<260){
+            val team=if(away)awayCode else homeCode;val opponent=if(away)homeCode else awayCode
+            val off=metrics[team]?.takeIf{it.games>=2};val def=metrics[opponent]?.takeIf{it.games>=2}
+            val edge=if(off!=null && def!=null)(off.offEpaPerPlay-def.defEpaAllowedPerPlay).coerceIn(-.65,.65) else 0.0
+            val roster=rosters[team].orEmpty();val qb=pick(rng,roster,setOf("QB"),"$team QB")
+            val rushShare=(rate(team,"rush_rate")?:.43).coerceIn(.25,.65)
+            val pass=rng.nextDouble()<(if(down>=3).78 else 1.0-rushShare).coerceIn(.30,.86)
+            val beforeField=field;val beforeDown=down;val beforeDistance=distance
+            val rusher=if(!pass)pick(rng,roster,setOf("RB","QB"),"$team RB") else null
+            val target=if(pass)pick(rng,roster,setOf("WR","TE","RB"),"$team WR") else null
+            val roll=rng.nextDouble();var yards=0;var kind="";var points=0;var switch=false
+            if(pass){
+                when {
+                    roll<(.022-edge*.008).coerceIn(.008,.045)->{kind="Intercepcion";switch=true}
+                    roll<(.095-edge*.025).coerceIn(.05,.16)->{kind="Sack";yards=-rng.nextInt(2,11)}
+                    roll<(.40-edge*.13).coerceIn(.25,.55)->kind="Pase incompleto"
+                    else->{kind="Pase completo";yards=((rng.nextDouble().pow(1.85)*30+1)*(1+edge*.45)).roundToInt().coerceAtLeast(1)}
+                }
+            } else {
+                when {
+                    roll<.012->{kind="Fumble";switch=true}
+                    roll<(.19-edge*.07).coerceIn(.09,.28)->{kind="Carrera detenida";yards=-rng.nextInt(0,4)}
+                    else->{kind="Carrera";yards=((rng.nextDouble().pow(1.85)*13+1)*(1+edge*.35)).roundToInt().coerceAtLeast(1)}
+                }
+            }
+            // Keep the original play type on scores so individual passing/rushing yards are conserved.
+            yards=yards.coerceAtMost(100-field);field=(field+yards).coerceIn(1,100)
+            if(field==100){points=if(rng.nextDouble()<.94)7 else 6;switch=true}
+            else if(!switch){
+                if(yards>=distance){down=1;distance=min(10,100-field)}
+                else{down++;distance=(distance-yards).coerceAtLeast(1)}
+                if(down>4){
+                    if(field>=62){kind="Intento de gol de campo";points=if(rng.nextDouble()<(.92-(100-field)*.012).coerceIn(.35,.9))3 else 0}
+                    else kind="Despeje"
+                    switch=true
+                }
+            }
+            val seconds=if(kind=="Pase incompleto")rng.nextInt(5,13) else rng.nextInt(18,43)
+            elapsed+=min(seconds,3600-elapsed)
+            if(away)awayScore+=points else homeScore+=points
+            plays+=V3Play(away,beforeField,field,beforeDown,beforeDistance,elapsed,kind,yards,points,awayScore,homeScore,
+                if(pass)qb.name else "",if(pass)target!!.name else "",if(pass)target!!.position else "",rusher?.name?:"")
+            if(switch){away=!away;field=if(kind=="Intercepcion"||kind=="Fumble")(100-field).coerceIn(5,95) else 25;down=1;distance=10}
+        }
+        return plays
+    }
+    fun props(away:String,home:String,seed:Int,metrics:Map<String,TeamMetrics>,features:List<MatchupFeature>,
+              rosters:Map<String,List<V3Athlete>>,iterations:Int=400):List<V3Prop>{
+        val values=linkedMapOf<Triple<String,String,String>,IntArray>()
+        for(i in 0 until iterations){
+            val game=simulate(away,home,seed+i*7919,metrics,features,rosters)
+            val totals=linkedMapOf<Triple<String,String,String>,Int>()
+            for(p in game){
+                val team=if(p.away)away else home
+                if(p.passer.isNotBlank() && p.kind=="Pase completo"){
+                    val k=Triple(team,p.passer,"PASS_YDS");totals[k]=(totals[k]?:0)+p.yards
+                }
+                if(p.receiver.isNotBlank() && p.kind=="Pase completo"){
+                    val k=Triple(team,p.receiver,"REC_YDS");totals[k]=(totals[k]?:0)+p.yards
+                }
+                if(p.rusher.isNotBlank() && p.kind.contains("Carrera")){
+                    val k=Triple(team,p.rusher,"RUSH_YDS");totals[k]=(totals[k]?:0)+p.yards
+                }
+            }
+            for((k,v) in totals)values.getOrPut(k){IntArray(iterations)}[i]=v
+        }
+        return values.map{(k,arr)->
+            val sorted=arr.sorted();fun q(p:Double)=sorted[((iterations-1)*p).toInt()].toDouble()
+            V3Prop(k.first,k.second,k.third,arr.average(),q(.1),q(.5),q(.9),iterations,arr)
+        }.sortedWith(compareBy<V3Prop>{it.team}.thenByDescending{it.mean})
+    }
+}

@@ -9,6 +9,19 @@ import kotlin.random.Random
 internal class SimcastStats24(private val away: String, private val home: String, raw: String, rosterRaw: String, private val gameKey: String, strengthsRaw: String = "{}") {
     private val plays = JSONArray(raw)
     private val roster = try { JSONObject(rosterRaw) } catch (_: Exception) { JSONObject() }
+    // Roster recovery: preserve named participants embedded in the same simulated event stream.
+    // These are simulated participants, not verified official lineups.
+    private fun embeddedName(team:String,position:String):String? {
+        for(i in 0 until plays.length()) {
+            val e=plays.optJSONObject(i) ?: continue
+            val eventTeam=if(e.optBoolean("a")) away else home
+            if(eventTeam!=team) continue
+            val field=when(position.uppercase()) { "QB"->"passer";"RB"->"rusher";else->"receiver" }
+            val name=e.optString(field)
+            if(name.isNotBlank() && !name.startsWith("$team ")) return name
+        }
+        return null
+    }
     private val events = JSONArray()
     private val teams = linkedMapOf(away to linkedMapOf<String, JSONObject>(), home to linkedMapOf<String, JSONObject>())
     private val strengths = try { JSONObject(strengthsRaw) } catch (_:Exception) { JSONObject() }
@@ -24,10 +37,10 @@ internal class SimcastStats24(private val away: String, private val home: String
             val kind = p.optString("k")
             val yards = p.optInt("y")
             val seed = Random((gameKey + ":" + i + ":v24").hashCode())
-            val passer = choose(team, "QB", 0)
-            val runner = choose(team, "RB", seed.nextInt(100))
-            val targetPosition = when (seed.nextInt(100)) { in 0..59 -> "WR"; in 60..79 -> "TE"; else -> "RB" }
-            val receiver = choose(team, targetPosition, seed.nextInt(100))
+            val passer = p.optString("passer").ifBlank { choose(team, "QB", 0) }
+            val runner = p.optString("rusher").ifBlank { choose(team, "RB", seed.nextInt(100)) }
+            val targetPosition = p.optString("receiver_position").ifBlank { when (seed.nextInt(100)) { in 0..59 -> "WR"; in 60..79 -> "TE"; else -> "RB" } }
+            val receiver = p.optString("receiver").ifBlank { choose(team, targetPosition, seed.nextInt(100)) }
             val event = JSONObject().put("play", i + 1).put("team", team).put("kind", kind)
                 .put("yards", yards).put("elapsed", p.optInt("t"))
                 .put("away_score", p.optInt("as")).put("home_score", p.optInt("hs"))
@@ -70,7 +83,7 @@ internal class SimcastStats24(private val away: String, private val home: String
             if (p.optString("position").equals(position, true) && !p.optBoolean("unavailable"))
                 matches.add(p.optString("name"))
         }
-        return if (matches.isNotEmpty()) matches[seed % matches.size] else "$team $position (sin roster)"
+        return if (matches.isNotEmpty()) matches[seed % matches.size] else embeddedName(team,position) ?: "$team $position (datos no disponibles)"
     }
     private fun stat(team: String, name: String, pos: String): JSONObject {
         val map = teams.getValue(team)
@@ -119,11 +132,11 @@ internal class SimcastStats24(private val away: String, private val home: String
         for (team in listOf(away, home)) for (p in accum.getValue(team).values) playerArray.put(p)
         val eventArray = JSONArray()
         for (i in 0 until stop) eventArray.put(events.getJSONObject(i))
-        return JSONObject().put("schema", "simcast30-experimental").put("game_key", gameKey)
+        return JSONObject().put("schema", "simcast-v3-possession-montecarlo-experimental").put("game_key", gameKey)
             .put("away", away).put("home", home).put("plays_processed", stop)
             .put("plays_total", plays.length()).put("final", stop == plays.length())
             .put("strengths", strengths).put("players", playerArray).put("events", eventArray)
-            .put("note", "SIMULATED. Local team EPA inputs if available; generator not calibrated. Touchdown attribution unavailable. Not real NFL box score.")
+            .put("note", "SIMULATED. Local team EPA inputs if available; generator not calibrated. Scoring plays retain pass/rush type and yards. Not real NFL box score.")
     }
     fun summary(until: Int): List<String> {
         val report = report(until); val a = report.getJSONArray("players")
