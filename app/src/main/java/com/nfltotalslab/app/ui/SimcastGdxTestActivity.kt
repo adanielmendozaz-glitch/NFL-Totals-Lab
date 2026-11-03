@@ -76,7 +76,7 @@ class SimcastGdxTestActivity : AndroidApplication() {
                 .put("monte_carlo_props",org.json.JSONArray(intent.getStringExtra("simcastProps") ?: "[]"))
                 // V4.4 DRIVE ENGINE: audit the actual profiles used.
                 .put("nflverse_profile",JSONObject(intent.getStringExtra("simcastNflverse") ?: "{}"))
-                .put("usage_audit",SimcastUsageAudit.build(org.json.JSONArray(simcastRaw)))
+                .put("usage_audit",SimcastUsageAudit.build(simcastStats.report(org.json.JSONArray(simcastRaw).length()).getJSONArray("events")))
                 .put("usage_model_status","PENDING_2026_PLAYER_STATS")
                 .put("engine_version","V5-phase2-usage-audit-experimental")
                 .put("export_schema", "simcast-json-v2")
