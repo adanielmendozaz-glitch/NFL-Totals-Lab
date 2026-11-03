@@ -6,6 +6,7 @@
         android:label="NFL Totals Lab"
         android:theme="@style/Theme.NFLTotalsLab"
         android:usesCleartextTraffic="false">
+        <activity android:name=".ui.SimcastGdxTestActivity" android:exported="false" android:screenOrientation="landscape" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

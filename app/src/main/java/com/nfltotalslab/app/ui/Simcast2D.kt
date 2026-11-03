@@ -1,5 +1,7 @@
 package com.nfltotalslab.app.ui
 
+import android.content.Intent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -99,6 +101,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val qbName=playerName(roster,p.away,"QB",0)
     val rbName=playerName(roster,p.away,"RB",0)
     val actor=if(p.kind.contains("Pase")||p.kind=="Sack"||p.kind=="Intercepcion")qbName else rbName
+    val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         Text("SIMCAST 2D V1.5 · VISTA TACTICA EXPERIMENTAL",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
         Text("${game.awayTeam} ${p.awayScore} — ${p.homeScore} ${game.homeTeam}   Q$quarter ${"%02d:%02d".format(remaining/60,remaining%60)}",color=Color.White)
@@ -176,6 +179,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
             OutlinedButton(onClick={speed=if(speed==4)1 else speed*2},contentPadding=PaddingValues(horizontal=7.dp)){Text("${speed}x")}
         }
         OutlinedButton(onClick={showNames=!showNames}){Text(if(showNames)"Ocultar etiquetas" else "Mostrar nombres / posiciones")}
+        OutlinedButton(onClick={testContext.startActivity(Intent(testContext,SimcastGdxTestActivity::class.java))}){Text("Probar motor libGDX (pantalla separada)")}
         Text("EXPERIMENTAL: nombres proceden del roster si esta disponible; las asignaciones y rutas son ilustrativas, no tracking real. Motor sin calibracion historica. No altera Core, Ranking ni apuestas.",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
     }
 }
