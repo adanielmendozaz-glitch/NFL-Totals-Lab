@@ -45,7 +45,9 @@ class SimcastGdxTestActivity : AndroidApplication() {
             intent.getStringExtra("receiver") ?: "WR",
             intent.getStringExtra("runner") ?: "RB",
             intent.getIntExtra("awayColor", 0xFF006778.toInt()),
-            intent.getIntExtra("homeColor", 0xFF241773.toInt()), simcastStats
+            intent.getIntExtra("homeColor", 0xFF241773.toInt()), simcastStats,
+            intent.getStringExtra("simcastProps") ?: "[]",
+            intent.getStringExtra("simcastStrengths") ?: "{}"
         ), AndroidApplicationConfiguration().apply { useImmersiveMode = true })
     }
 }
