@@ -83,3 +83,46 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+
+// NFL V1.6.2 native libGDX packaging
+val gdxNativeVersion = "1.13.5"
+val gdxNatives = configurations.create("gdxNatives")
+dependencies {
+    add("gdxNatives", "com.badlogicgames.gdx:gdx-platform:$gdxNativeVersion:natives-arm64-v8a")
+    add("gdxNatives", "com.badlogicgames.gdx:gdx-platform:$gdxNativeVersion:natives-armeabi-v7a")
+    add("gdxNatives", "com.badlogicgames.gdx:gdx-platform:$gdxNativeVersion:natives-x86_64")
+}
+val generatedGdxJni = layout.buildDirectory.dir("generated/gdx-jni")
+val extractGdxNatives = tasks.register("extractGdxNatives") {
+    inputs.files(gdxNatives)
+    outputs.dir(generatedGdxJni)
+    doLast {
+        val dest = generatedGdxJni.get().asFile
+        dest.deleteRecursively()
+        dest.mkdirs()
+        val targets = mapOf(
+            "natives-arm64-v8a" to "arm64-v8a",
+            "natives-armeabi-v7a" to "armeabi-v7a",
+            "natives-x86_64" to "x86_64"
+        )
+        gdxNatives.resolvedConfiguration.resolvedArtifacts.forEach { artifact ->
+            val classifier = artifact.classifier ?: ""
+            val abi = targets[classifier] ?: error("Unknown gdx classifier: $classifier")
+            val destination = dest.resolve(abi)
+            destination.mkdirs()
+            copy {
+                from(zipTree(artifact.file))
+                include("**/*.so")
+                into(destination)
+                eachFile { path = name }
+                includeEmptyDirs = false
+            }
+            check(destination.resolve("libgdx.so").exists()) {
+                "Missing libgdx.so for $abi from ${artifact.file.name}"
+            }
+        }
+    }
+}
+android.sourceSets.getByName("main").jniLibs.srcDir(generatedGdxJni)
+tasks.named("preBuild") { dependsOn(extractGdxNatives) }
