@@ -65,7 +65,21 @@ internal object SimcastV3Engine {
         while(elapsed<3600 && plays.size<260){
             val team=if(away)awayCode else homeCode;val opponent=if(away)homeCode else awayCode
             val off=metrics[team]?.takeIf{it.games>=2};val def=metrics[opponent]?.takeIf{it.games>=2}
-            val edge=if(off!=null && def!=null)(off.offEpaPerPlay-def.defEpaAllowedPerPlay).coerceIn(-.65,.65) else 0.0
+            // V5 Phase 1: 2026 team metrics already stored by NFL Totals Lab.
+            // Shrink small samples toward neutral league priors; avoid overreacting
+            // to a single game. This is a heuristic pending historical calibration.
+            val evidence=if(off!=null && def!=null)
+                (min(off.games,def.games).toDouble()/(min(off.games,def.games)+8.0)) else 0.0
+            val epaEdge=if(off!=null && def!=null)
+                (off.offEpaPerPlay-def.defEpaAllowedPerPlay).coerceIn(-.65,.65) else 0.0
+            val successEdge=if(off!=null && def!=null)
+                (off.successRate-.43).coerceIn(-.20,.20) else 0.0
+            val explosiveEdge=if(off!=null && def!=null)
+                (off.explosiveRate-.10).coerceIn(-.08,.12) else 0.0
+            val edge=(evidence*(epaEdge+.30*successEdge+.35*explosiveEdge)).coerceIn(-.65,.65)
+            val turnoverRisk=if(off!=null)
+                (.022+(off.turnoverRate-.025)*(off.games.toDouble()/(off.games+8.0))).coerceIn(.008,.05)
+                else .022
             val roster=rosters[team].orEmpty();val qb=pick(rng,roster,setOf("QB"),"$team QB")
             val profile=profiles[team]
             val historicalPass=profile?.passRate?.coerceIn(.25,.82)
@@ -104,14 +118,14 @@ internal object SimcastV3Engine {
             val roll=rng.nextDouble();var yards=0;var kind="";var points=0;var switch=false
             if(pass){
                 when {
-                    roll<(.022-edge*.008).coerceIn(.008,.045)->{kind="Intercepcion";switch=true}
+                    roll<(turnoverRisk-edge*.008).coerceIn(.008,.045)->{kind="Intercepcion";switch=true}
                     roll<(.095-edge*.025).coerceIn(.05,.16)->{kind="Sack";yards=-rng.nextInt(2,11)}
                     roll<(.40-edge*.13).coerceIn(.25,.55)->kind="Pase incompleto"
                     else->{kind="Pase completo";yards=((rng.nextDouble().pow(1.85)*30+1)*(1+edge*.45)).roundToInt().coerceAtLeast(1)}
                 }
             } else {
                 when {
-                    roll<.012->{kind="Fumble";switch=true}
+                    roll<(turnoverRisk*.55).coerceIn(.005,.027)->{kind="Fumble";switch=true}
                     roll<(.19-edge*.07).coerceIn(.09,.28)->{kind="Carrera detenida";yards=-rng.nextInt(0,4)}
                     else->{kind="Carrera";yards=((rng.nextDouble().pow(1.85)*13+1)*(1+edge*.35)).roundToInt().coerceAtLeast(1)}
                 }
