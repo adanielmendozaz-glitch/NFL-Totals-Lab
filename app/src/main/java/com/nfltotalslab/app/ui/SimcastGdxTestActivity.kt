@@ -138,57 +138,97 @@ private class Broadcast22(
         return Vector2(x + d * (if (n < 4) 3.3f else if (n < 7) 7f else 13f), y + 11f)
     }
 
+    // V2.3: animation phases. Coordinates are tied to the simulated play, not to an independent outcome.
+    private fun playType(p: SimSnap): String = when {
+        p.kind.contains("Intercep", true) -> "PICK"
+        p.kind.contains("Sack", true) -> "SACK"
+        p.kind.contains("incompleto", true) -> "INCOMPLETE"
+        p.kind.contains("Touchdown", true) -> "TOUCHDOWN"
+        p.kind.contains("gol de campo", true) -> "FIELD_GOAL"
+        p.kind.contains("Despeje", true) -> "PUNT"
+        isRun(p) -> "RUN"
+        else -> "PASS"
+    }
+    private fun clampPlayer(v: Vector2): Vector2 {
+        v.x = v.x.coerceIn(10.8f, 109.2f)
+        v.y = v.y.coerceIn(12.5f, 59.5f)
+        return v
+    }
     private fun pos(i: Int, t: Float, p: SimSnap): Vector2 {
         val v = start(i, p)
         val d = direction(p)
         val a = (t - 1f).coerceAtLeast(0f)
+        val kind = playType(p)
+        val move = ease(a / 3.8f)
+        val target = carrier(p)
         if (i < 11) when (i) {
             0 -> {
-                v.x -= d * 3f * ease(a / 1.6f)
-                if (p.kind.contains("Sack", true)) v.x = los(p) + d * p.yards * ease(a / 3f)
+                v.x -= d * (if (kind == "SACK") 1.5f else 3.2f) * ease(a / 1.3f)
+                if (kind == "SACK") v.x = MathUtils.lerp(v.x, finish(p), ease(a / 3.2f))
             }
             1 -> if (isRun(p)) {
-                v.x = MathUtils.lerp(v.x, finish(p), ease(a / 3.9f))
-                v.y += (index % 3 - 1) * 2.5f * ease(a / 3f)
-            } else v.x += d * 4f * ease(a / 3f)
+                v.x = MathUtils.lerp(v.x, finish(p), move)
+                v.y += ((index % 3) - 1) * 3f * ease(a / 2f)
+            } else {
+                v.x += d * 3.6f * ease(a / 2.4f)
+            }
             in 2..6 -> {
-                v.x += d * 2f * ease(a / 1.5f)
-                v.y += MathUtils.sin(a * 2.8f + i) * .23f
+                // The offensive line forms a pocket rather than drifting across the field.
+                val pocket = if (i == 4) .7f else 1.8f
+                v.x += d * pocket * ease(a / 1.4f)
+                v.y += MathUtils.sin(a * 2.4f + i) * .25f
             }
             else -> {
                 val route = i - 7
-                val bend = when ((index + route) % 5) {
-                    0 -> -8f; 1 -> 8f; 2 -> -3f; 3 -> 4f; else -> 0f
+                val routeId = (index + route) % 5
+                val depth = when (routeId) { 0 -> 9f; 1 -> 16f; 2 -> 24f; 3 -> 12f; else -> 20f }
+                val cut = when (routeId) { 0 -> -9f; 1 -> 7f; 2 -> 0f; 3 -> 10f; else -> -7f }
+                v.x += d * depth * ease(a / 3.6f)
+                v.y += cut * ease((a - 1.1f) / 2.1f)
+                if (i == target && kind in setOf("PASS", "TOUCHDOWN")) {
+                    v.x = MathUtils.lerp(v.x, finish(p), ease((a - 2.0f) / 2.2f))
                 }
-                v.x += d * (10f + route * 3f) * ease(a / 3.5f)
-                v.y += bend * ease((a - 1.2f) / 1.9f)
-                if (i == carrier(p)) v.x = MathUtils.lerp(v.x, finish(p), ease((a - 2.1f) / 2.1f))
             }
         } else {
             val n = i - 11
-            if (n < 4) v.x -= d * 3.5f * ease(a / 1.8f)
-            else {
-                val target = pos(if (n < 7) 1 else 7 + (n - 7) % 4, t, p)
-                v.x = MathUtils.lerp(v.x, target.x - d * 1.5f, ease(a / 4.6f))
-                v.y = MathUtils.lerp(v.y, target.y + (if (n % 2 == 0) 2.5f else -2.5f), ease(a / 4.6f))
+            if (n < 4) {
+                v.x -= d * (if (kind == "SACK") 6f else 2.2f) * ease(a / 2f)
+                v.y += MathUtils.sin(n.toFloat() * 2f + a) * .5f
+            } else {
+                val pursue = if (kind == "SACK") 0 else if (kind == "PICK" && n >= 7) target else if (isRun(p)) 1 else 7 + (n - 7).coerceAtLeast(0) % 4
+                val focus = pos(pursue, t, p)
+                val pursuit = ease((a - if (n >= 7) .7f else .2f) / 3.7f)
+                v.x = MathUtils.lerp(v.x, focus.x - d * 1.1f, pursuit)
+                v.y = MathUtils.lerp(v.y, focus.y + (if (n % 2 == 0) 1.6f else -1.6f), pursuit)
             }
         }
-        v.x = v.x.coerceIn(10.9f, 109.1f)
-        v.y = v.y.coerceIn(13.5f, 61.5f)
-        return v
+        return clampPlayer(v)
     }
 
     private fun ball(p: SimSnap, t: Float): Vector2 {
+        val kind = playType(p)
         if (t < 1f) return start(4, p)
-        if (isRun(p)) return pos(if (t < 2f) 0 else 1, t, p)
-        if (t < 2.5f) return pos(0, t, p)
-        if (t < 3.7f) {
-            val a = pos(0, 2.5f, p)
-            val b = pos(carrier(p), 3.7f, p)
-            val u = ease((t - 2.5f) / 1.2f)
-            return Vector2(MathUtils.lerp(a.x, b.x, u), MathUtils.lerp(a.y, b.y, u) + 3f * MathUtils.sin(u * MathUtils.PI))
+        if (kind == "RUN") return pos(if (t < 1.9f) 0 else 1, t, p)
+        if (kind == "SACK") return pos(0, t, p)
+        if (kind == "FIELD_GOAL" || kind == "PUNT") {
+            val u = ease((t - 1.7f) / 2.7f)
+            return Vector2(MathUtils.lerp(los(p), finish(p), u), 36f + 15f * MathUtils.sin(u * MathUtils.PI))
         }
-        return pos(carrier(p), t, p)
+        if (t < 2.3f) return pos(0, t, p)
+        val from = pos(0, 2.3f, p)
+        val to = when (kind) {
+            "INCOMPLETE" -> Vector2(finish(p) + direction(p) * 7f, 48f)
+            "PICK" -> pos(18, 3.8f, p)
+            else -> pos(carrier(p), 3.8f, p)
+        }
+        val u = ease((t - 2.3f) / 1.5f)
+        if (t < 3.8f) return Vector2(MathUtils.lerp(from.x, to.x, u),
+            MathUtils.lerp(from.y, to.y, u) + 4.5f * MathUtils.sin(u * MathUtils.PI))
+        return when (kind) {
+            "INCOMPLETE" -> Vector2(to.x, to.y - 3f * ease((t - 3.8f) / 1f))
+            "PICK" -> pos(18, t, p)
+            else -> pos(carrier(p), t, p)
+        }
     }
 
     // Android Canvas produces crisp, antialiased HUD text. Rebuild only when the play changes.
@@ -237,7 +277,7 @@ private class Broadcast22(
         text(clock, 658f, 85f, 70f)
         text("${p.down} & ${p.distance}", 922f, 77f, 45f, amber)
         text("POS ${if (p.away) away else home}", 541f, 132f, 33f, muted)
-        text("SIMCAST 2.2  |  RECONSTRUCCION", 38f, 204f, 30f, muted)
+        text("SIMCAST 2.3  |  GAMEPLAY", 38f, 204f, 30f, muted)
         val total = p.awayScore + p.homeScore
         val needed = if (line > 0f) kotlin.math.floor((line - total).toDouble()).toInt() + 1 else 0
         text("TOTAL  $total", 574f, 205f, 37f)
@@ -380,12 +420,26 @@ private class Broadcast22(
             shapes.rect(v.x + .7f, v.y - .1f, .35f, .9f)
             shapes.color = white; shapes.circle(v.x, v.y + 1f, .68f, 16)
             shapes.color = team; shapes.rect(v.x - .6f, v.y + 1.1f, 1.2f, .23f)
-            if (i == carrier(p)) {
+            if (i == carrier(p) && playType(p) !in setOf("INCOMPLETE", "PICK", "FIELD_GOAL", "PUNT")) {
                 shapes.color = gold; shapes.circle(v.x, v.y - 1.8f, .35f, 14)
             }
         }
         val b = ball(p, phase)
         shapes.color = gold; shapes.ellipse(b.x - .5f, b.y - .24f, 1f, .48f)
+        // A bright ring identifies the actual carrier only after possession is established.
+        val kind = playType(p)
+        val activeCarrier = when {
+            phase < 1.9f -> 0
+            kind == "INCOMPLETE" || kind == "FIELD_GOAL" || kind == "PUNT" -> -1
+            kind == "PICK" && phase > 3.8f -> 18
+            kind == "SACK" -> 0
+            else -> carrier(p)
+        }
+        if (activeCarrier >= 0) {
+            val v = pos(activeCarrier, phase, p)
+            shapes.color = gold
+            shapes.circle(v.x, v.y - 1.5f, .28f, 14)
+        }
         shapes.color = Color(.025f, .048f, .085f, 1f)
         shapes.rect(0f, 0f, 120f, 9.5f)
         for (i in 0..4) {
