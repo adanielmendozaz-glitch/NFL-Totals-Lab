@@ -1,6 +1,8 @@
 package com.nfltotalslab.app.ui
 
 import android.content.Intent
+import com.nfltotalslab.app.branding.teamBrand
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -194,8 +196,10 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 putExtra("plays",serialized.toString())
                 putExtra("line",prediction.line.toDouble())
                 putExtra("qb",qbName); putExtra("receiver",receiverName); putExtra("runner",rbName)
+                putExtra("awayColor",teamBrand(game.awayTeam).primary.toArgb())
+                putExtra("homeColor",teamBrand(game.homeTeam).primary.toArgb())
             })
-        }){Text("Abrir Simcast V1.9 · partido completo")}
+        }){Text("Abrir Simcast 2.0 · Stadium")}
         Text("EXPERIMENTAL: nombres proceden del roster si esta disponible; las asignaciones y rutas son ilustrativas, no tracking real. Motor sin calibracion historica. No altera Core, Ranking ni apuestas.",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
     }
 }
