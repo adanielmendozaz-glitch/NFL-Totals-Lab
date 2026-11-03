@@ -103,8 +103,6 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
         Text("SIMCAST 2D V1.5 · VISTA TACTICA EXPERIMENTAL",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
         Text("${game.awayTeam} ${p.awayScore} — ${p.homeScore} ${game.homeTeam}   Q$quarter ${"%02d:%02d".format(remaining/60,remaining%60)}",color=Color.White)
         Text("$offenseTeam · ${p.down}° y ${p.distance} · Balon en yarda ${p.start}",color=Color(0xFFB7C5D6))
-        Text("Vista libGDX experimental · renderizado continuo (demostración independiente)",color=Color(0xFFB7C5D6))
-        SimcastGdxPrototype()
         Canvas(Modifier.fillMaxWidth().height(240.dp)){
             val w=size.width;val h=size.height
             val left=w*.075f;val usable=w*.85f
