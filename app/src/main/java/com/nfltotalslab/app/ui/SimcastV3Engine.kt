@@ -45,6 +45,8 @@ internal object SimcastV3Engine {
         var awayScore=0;var homeScore=0;var field=25;var down=1;var distance=10
         val featureMap=features.groupBy { it.team }
         fun rate(team:String,key:String):Double? = featureMap[team]?.firstOrNull{it.feature==key && it.sampleN>=20}?.value
+        // V4.2 CLOCK ENGINE: situational clock, quarter boundaries
+        fun tick(seconds:Int){ elapsed+=min(seconds.coerceAtLeast(1),min(3600-elapsed,900-elapsed%900)) }
         while(elapsed<3600 && plays.size<260){
             val team=if(away)awayCode else homeCode;val opponent=if(away)homeCode else awayCode
             val off=metrics[team]?.takeIf{it.games>=2};val def=metrics[opponent]?.takeIf{it.games>=2}
@@ -58,7 +60,7 @@ internal object SimcastV3Engine {
                 val kick=if(field>=62) "Intento de gol de campo" else "Despeje"
                 val points=if(kick=="Intento de gol de campo" &&
                     rng.nextDouble()<(.92-(100-field)*.012).coerceIn(.35,.9)) 3 else 0
-                elapsed+=min(rng.nextInt(5,12),3600-elapsed)
+                tick(rng.nextInt(5,12))
                 if(away)awayScore+=points else homeScore+=points
                 plays+=V3Play(away,field,field,down,distance,elapsed,kick,0,points,awayScore,homeScore)
                 away=!away;field=25;down=1;distance=10
@@ -92,12 +94,19 @@ internal object SimcastV3Engine {
                     switch=true
                 }
             }
-            val seconds=if(kind=="Pase incompleto")rng.nextInt(5,13) else rng.nextInt(18,43)
-            elapsed+=min(seconds,3600-elapsed)
+            val scoreGap=if(away)awayScore-homeScore else homeScore-awayScore
+            val hurry=(elapsed>=2700 && scoreGap<0) || (elapsed%1800>=1680 && scoreGap<=0)
+            val seconds=if(kind=="Pase incompleto"||kind=="Intercepcion")rng.nextInt(5,12) else if(hurry)rng.nextInt(9,23) else rng.nextInt(25,42)
+            tick(seconds)
             if(away)awayScore+=points else homeScore+=points
             plays+=V3Play(away,beforeField,field,beforeDown,beforeDistance,elapsed,kind,yards,points,awayScore,homeScore,
                 if(pass)qb.name else "",if(pass)target!!.name else "",if(pass)target!!.position else "",rusher?.name?:"")
-            if(switch){away=!away;field=if(kind=="Intercepcion"||kind=="Fumble")(100-field).coerceIn(5,95) else 25;down=1;distance=10}
+            if(switch){
+                val downs=points==0 && beforeDown==4 && kind!="Intercepcion" && kind!="Fumble"
+                away=!away
+                field=if(kind=="Intercepcion"||kind=="Fumble"||downs)(100-field).coerceIn(1,99) else 25
+                down=1;distance=10
+            }
         }
         return plays
     }
