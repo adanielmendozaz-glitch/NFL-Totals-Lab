@@ -5,6 +5,11 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Bundle
+import android.content.Intent
+import android.app.Activity
+import android.view.Gravity
+import android.widget.Button
+import android.widget.FrameLayout
 import com.badlogic.gdx.ApplicationAdapter
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.backends.android.AndroidApplication
@@ -23,6 +28,40 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class SimcastGdxTestActivity : AndroidApplication() {
+    // SIMCAST_JSON_EXPORT_V1: Storage Access Framework, no storage permission needed.
+    private var exportJson: String = ""
+    private var exportName: String = "simcast_report.json"
+    private val exportRequestCode = 8341
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == exportRequestCode && resultCode == Activity.RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(exportJson.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                } ?: throw IllegalStateException("No se pudo abrir el archivo")
+                android.widget.Toast.makeText(this, "JSON exportado correctamente", android.widget.Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(this, "Error exportando JSON: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun exportReport() {
+        if (exportJson.isBlank()) {
+            android.widget.Toast.makeText(this, "Reporte no disponible", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val picker = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, exportName)
+        }
+        startActivityForResult(picker, exportRequestCode)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val simcastRaw = intent.getStringExtra("plays") ?: "[]"
@@ -30,6 +69,16 @@ class SimcastGdxTestActivity : AndroidApplication() {
             intent.getStringExtra("home") ?: "HOME", simcastRaw,
             intent.getStringExtra("simcastRoster") ?: "{}",
             intent.getStringExtra("simcastGameKey") ?: "unknown", intent.getStringExtra("simcastStrengths") ?: "{}")
+        try {
+            val key = (intent.getStringExtra("simcastGameKey") ?: "game").replace(Regex("[^A-Za-z0-9_-]"),"_")
+            exportName = "${key}_simcast_v4.json"
+            exportJson = simcastStats.report(org.json.JSONArray(simcastRaw).length())
+                .put("monte_carlo_props",org.json.JSONArray(intent.getStringExtra("simcastProps") ?: "[]"))
+                .put("export_schema", "simcast-json-v1")
+                .toString(2)
+        } catch (e: Exception) {
+            exportJson = org.json.JSONObject().put("error", e.message ?: "Error de reporte").toString(2)
+        }
         try {
             val dir = java.io.File(filesDir,"simcast_reports").apply { mkdirs() }
             val key = (intent.getStringExtra("simcastGameKey") ?: "game").replace(Regex("[^A-Za-z0-9_-]"),"_")
@@ -49,6 +98,18 @@ class SimcastGdxTestActivity : AndroidApplication() {
             intent.getStringExtra("simcastProps") ?: "[]",
             intent.getStringExtra("simcastStrengths") ?: "{}"
         ), AndroidApplicationConfiguration().apply { useImmersiveMode = true })
+        // Native Android overlay: always accessible, including when the game is paused.
+        val exportButton = Button(this).apply {
+            text = "EXPORTAR JSON"
+            textSize = 11f
+            setOnClickListener { exportReport() }
+        }
+        val params = FrameLayout.LayoutParams(
+            (150 * resources.displayMetrics.density).toInt(),
+            (48 * resources.displayMetrics.density).toInt(),
+            Gravity.TOP or Gravity.END
+        ).apply { topMargin = (75 * resources.displayMetrics.density).toInt() }
+        addContentView(exportButton, params)
     }
 }
 
