@@ -171,7 +171,8 @@ internal class SimcastStats24(private val away: String, private val home: String
             }
             lastAway=a;lastHome=h;lastTime=time
         }
-        return JSONObject().put("schema", "simcast-v4.1-ledger-audit-experimental")
+        // V4.4 DRIVE ENGINE: update export identity.
+        return JSONObject().put("schema", "simcast-v4.4-drive-ledger-experimental")
             .put("integrity_status",if(issues.length()==0)"PASS" else "FAIL")
             .put("integrity_issues",issues).put("audit",audit).put("game_key", gameKey)
             .put("away", away).put("home", home).put("plays_processed", stop)

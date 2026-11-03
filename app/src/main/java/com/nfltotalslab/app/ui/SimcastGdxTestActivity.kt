@@ -74,7 +74,10 @@ class SimcastGdxTestActivity : AndroidApplication() {
             exportName = "${key}_simcast_v4.json"
             exportJson = simcastStats.report(org.json.JSONArray(simcastRaw).length())
                 .put("monte_carlo_props",org.json.JSONArray(intent.getStringExtra("simcastProps") ?: "[]"))
-                .put("export_schema", "simcast-json-v1")
+                // V4.4 DRIVE ENGINE: audit the actual profiles used.
+                .put("nflverse_profile",JSONObject(intent.getStringExtra("simcastNflverse") ?: "{}"))
+                .put("engine_version","V4.4-drive-engine-experimental")
+                .put("export_schema", "simcast-json-v2")
                 .toString(2)
         } catch (e: Exception) {
             exportJson = org.json.JSONObject().put("error", e.message ?: "Error de reporte").toString(2)

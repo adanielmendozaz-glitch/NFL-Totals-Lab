@@ -16,6 +16,10 @@ internal data class V3Prop(val team:String,val player:String,val market:String,v
 }
 internal data class V43DriveProfile(val drivesPerGame:Double,val playsPerDrive:Double,
     val secondsPerDrive:Double,val secondsPerPlay:Double,val passRate:Double,val sampleGames:Int)
+private fun Random.nextGaussianCompat():Double {
+    val u1=nextDouble().coerceAtLeast(1e-12)
+    return sqrt(-2.0*ln(u1))*cos(2.0*Math.PI*nextDouble())
+}
 internal object SimcastV3Engine {
     private fun pick(r:Random, athletes:List<V3Athlete>, positions:Set<String>,fallback:String):V3Athlete {
         // V4: use a plausible rotation, not the entire historical roster.
@@ -47,12 +51,22 @@ internal object SimcastV3Engine {
         var awayScore=0;var homeScore=0;var field=25;var down=1;var distance=10
         var drivePlayCount=0
         var driveClock=0
+        // V4.4 DRIVE ENGINE: sample each drive's play budget from nflverse.
+        var driveTarget=0
+        fun nextDriveTarget(team:String):Int {
+            val p=profiles[team] ?: error("Missing nflverse profile: $team")
+            return (p.playsPerDrive.coerceIn(2.5,12.0)+rng.nextGaussianCompat()*2.0).roundToInt().coerceIn(2,18)
+        }
         val featureMap=features.groupBy { it.team }
         fun rate(team:String,key:String):Double? = featureMap[team]?.firstOrNull{it.feature==key && it.sampleN>=20}?.value
         // V4.2 CLOCK ENGINE: situational clock, quarter boundaries
         fun tick(seconds:Int){ elapsed+=min(seconds.coerceAtLeast(1),min(3600-elapsed,900-elapsed%900)) }
+        require(profiles.containsKey(awayCode) && profiles.containsKey(homeCode)) {
+            "NFLVERSE PROFILE MISSING: refusing generic fallback"
+        }
         while(elapsed<3600 && plays.size<260){
             val team=if(away)awayCode else homeCode;val opponent=if(away)homeCode else awayCode
+            if(driveTarget==0) driveTarget=nextDriveTarget(team)
             val off=metrics[team]?.takeIf{it.games>=2};val def=metrics[opponent]?.takeIf{it.games>=2}
             val edge=if(off!=null && def!=null)(off.offEpaPerPlay-def.defEpaAllowedPerPlay).coerceIn(-.65,.65) else 0.0
             val roster=rosters[team].orEmpty();val qb=pick(rng,roster,setOf("QB"),"$team QB")
@@ -62,14 +76,14 @@ internal object SimcastV3Engine {
             val pass=rng.nextDouble()<(if(down>=3) (1.0-rushShare+.15) else 1.0-rushShare).coerceIn(.25,.9)
             val beforeField=field;val beforeDown=down;val beforeDistance=distance
             // V4.1: decide special teams before generating an offensive play.
-            if(down==4 && (field>=62 || distance>2)){
+            if((down==4 && (field>=62 || distance>2)) || (drivePlayCount>=driveTarget && field<100)){
                 val kick=if(field>=62) "Intento de gol de campo" else "Despeje"
                 val points=if(kick=="Intento de gol de campo" &&
                     rng.nextDouble()<(.92-(100-field)*.012).coerceIn(.35,.9)) 3 else 0
                 tick(rng.nextInt(5,12))
                 if(away)awayScore+=points else homeScore+=points
                 plays+=V3Play(away,field,field,down,distance,elapsed,kick,0,points,awayScore,homeScore)
-                away=!away;field=25;down=1;distance=10;drivePlayCount=0;driveClock=0
+                away=!away;field=25;down=1;distance=10;drivePlayCount=0;driveClock=0;driveTarget=0
                 continue
             }
             val rusher=if(!pass)pick(rng,roster,setOf("RB","QB"),"$team RB") else null
@@ -125,7 +139,7 @@ internal object SimcastV3Engine {
                 val downs=points==0 && beforeDown==4 && kind!="Intercepcion" && kind!="Fumble"
                 away=!away
                 field=if(kind=="Intercepcion"||kind=="Fumble"||downs)(100-field).coerceIn(1,99) else 25
-                down=1;distance=10;drivePlayCount=0;driveClock=0
+                down=1;distance=10;drivePlayCount=0;driveClock=0;driveTarget=0
             }
         }
         return plays

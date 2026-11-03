@@ -51,6 +51,11 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val rosterMap=remember(roster){ listOf(game.awayTeam to roster?.away,game.homeTeam to roster?.home).associate { (code,team) ->
         code to (team?.players?.map{V3Athlete(it.name,it.position,it.coreStarter,it.depthRank,it.unavailable)} ?: emptyList()) } }
     val nflverseProfiles=remember(game.season,game.week){NflverseV43.load(context,game.season,game.week)}
+    // V4.4 DRIVE ENGINE: fail visibly if historical profiles are absent.
+    if(!nflverseProfiles.containsKey(game.awayTeam) || !nflverseProfiles.containsKey(game.homeTeam)){
+        Text("SIMCAST NO DISPONIBLE: faltan perfiles nflverse para esta semana.")
+        return
+    }
     val plays=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles){createPlays(game,prediction,metrics,features,rosterMap,nflverseProfiles)}
     val props=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles){SimcastV3Engine.props(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":props").hashCode(),metrics,features,rosterMap,profiles=nflverseProfiles)}
     var showProps by remember { mutableStateOf(false) }
@@ -77,7 +82,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val actor=if(p.kind.contains("Pase")||p.kind=="Sack"||p.kind=="Intercepcion")qbName else rbName
     val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("NFL SIMCAST V4.3 · NFLVERSE DRIVES + CLOCK + MONTE CARLO",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
+        Text("NFL SIMCAST V4.4 · NFLVERSE DRIVE ENGINE",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
         Text("NFLVERSE ${game.season} · perfiles ${nflverseProfiles.size} · ${game.awayTeam}: ${nflverseProfiles[game.awayTeam]?.sampleGames ?: 0} juegos / ${game.homeTeam}: ${nflverseProfiles[game.homeTeam]?.sampleGames ?: 0} juegos",color=Color(0xFFFFC861),style=MaterialTheme.typography.bodySmall)
         Text("DATOS ${game.season} · ${if(metrics[game.awayTeam]?.games ?: 0 >= 2 && metrics[game.homeTeam]?.games ?: 0 >= 2) "EPA registrado" else "EPA insuficiente: fallback"} · ${features.size} métricas matchup · ${rosterMap.values.sumOf{it.size}} jugadores",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
@@ -185,6 +190,17 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 putExtra("awayColor",teamBrand(game.awayTeam).primary.toArgb())
                 putExtra("homeColor",teamBrand(game.homeTeam).primary.toArgb())
                 putExtra("simcastGameKey",game.gameId+":"+prediction.id)
+                putExtra("simcastNflverse",org.json.JSONObject().apply {
+                    put("source","nflverse/nflverse-data pbp")
+                    put("season",game.season);put("week",game.week)
+                    for(code in listOf(game.awayTeam,game.homeTeam)){
+                        val v=nflverseProfiles.getValue(code)
+                        put(code,org.json.JSONObject().put("sample_games",v.sampleGames)
+                            .put("drives_per_game",v.drivesPerGame).put("plays_per_drive",v.playsPerDrive)
+                            .put("seconds_per_drive",v.secondsPerDrive).put("seconds_per_play",v.secondsPerPlay)
+                            .put("pass_rate",v.passRate))
+                    }
+                }.toString())
                 putExtra("simcastProps",org.json.JSONArray().apply{props.forEach{v->put(org.json.JSONObject().apply{
                     put("team",v.team);put("player",v.player);put("market",v.market);put("mean",v.mean)
                     put("p10",v.p10);put("p50",v.median);put("p90",v.p90);put("n",v.sample)
