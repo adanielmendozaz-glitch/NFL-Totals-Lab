@@ -28,7 +28,7 @@ class SimcastGdxTestActivity : AndroidApplication() {
         val simcastStats = SimcastStats24(intent.getStringExtra("away") ?: "AWAY",
             intent.getStringExtra("home") ?: "HOME", simcastRaw,
             intent.getStringExtra("simcastRoster") ?: "{}",
-            intent.getStringExtra("simcastGameKey") ?: "unknown")
+            intent.getStringExtra("simcastGameKey") ?: "unknown", intent.getStringExtra("simcastStrengths") ?: "{}")
         try {
             val dir = java.io.File(filesDir,"simcast_reports").apply { mkdirs() }
             val key = (intent.getStringExtra("simcastGameKey") ?: "game").replace(Regex("[^A-Za-z0-9_-]"),"_")

@@ -6,18 +6,17 @@ import kotlin.math.max
 import kotlin.random.Random
 
 /** Experimental Simcast accounting, isolated from NFL Totals Lab predictive Core. */
-internal class SimcastStats24(private val away: String, private val home: String, raw: String, rosterRaw: String, private val gameKey: String) {
+internal class SimcastStats24(private val away: String, private val home: String, raw: String, rosterRaw: String, private val gameKey: String, strengthsRaw: String = "{}") {
     private val plays = JSONArray(raw)
     private val roster = try { JSONObject(rosterRaw) } catch (_: Exception) { JSONObject() }
     private val events = JSONArray()
     private val teams = linkedMapOf(away to linkedMapOf<String, JSONObject>(), home to linkedMapOf<String, JSONObject>())
-    private val strengths = JSONObject()
+    private val strengths = try { JSONObject(strengthsRaw) } catch (_:Exception) { JSONObject() }
     init {
         for (team in listOf(away, home)) {
             val obj = roster.optJSONObject(team) ?: JSONObject()
-            strengths.put(team, JSONObject().put("source", "NFL Totals Lab roster (availability only)")
-                .put("offense_rating", JSONObject.NULL).put("defense_rating", JSONObject.NULL)
-                .put("active_players", obj.optJSONArray("players")?.length() ?: 0))
+            if (!strengths.has(team)) strengths.put(team, JSONObject().put("source","missing").put("status","insufficient_data"))
+            strengths.getJSONObject(team).put("active_players", obj.optJSONArray("players")?.length() ?: 0)
         }
         for (i in 0 until plays.length()) {
             val p = plays.optJSONObject(i) ?: continue
@@ -120,11 +119,11 @@ internal class SimcastStats24(private val away: String, private val home: String
         for (team in listOf(away, home)) for (p in accum.getValue(team).values) playerArray.put(p)
         val eventArray = JSONArray()
         for (i in 0 until stop) eventArray.put(events.getJSONObject(i))
-        return JSONObject().put("schema", "simcast24-experimental").put("game_key", gameKey)
+        return JSONObject().put("schema", "simcast30-experimental").put("game_key", gameKey)
             .put("away", away).put("home", home).put("plays_processed", stop)
             .put("plays_total", plays.length()).put("final", stop == plays.length())
             .put("strengths", strengths).put("players", playerArray).put("events", eventArray)
-            .put("note", "SIMULATED. No calibrated team strengths; touchdown attribution unavailable from source events. Not real NFL box score.")
+            .put("note", "SIMULATED. Local team EPA inputs if available; generator not calibrated. Touchdown attribution unavailable. Not real NFL box score.")
     }
     fun summary(until: Int): List<String> {
         val report = report(until); val a = report.getJSONArray("players")

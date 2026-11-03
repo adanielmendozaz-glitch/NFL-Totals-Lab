@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.dp
+import com.nfltotalslab.app.data.DbHelper
+import com.nfltotalslab.app.data.TeamMetrics
 import com.nfltotalslab.app.data.GameRecord
 import com.nfltotalslab.app.data.Prediction
 import com.nfltotalslab.app.data.GameRosterIntelligence
@@ -27,27 +29,30 @@ private data class SimPlay(val away:Boolean,val start:Int,val finish:Int,val dow
 private val offenseRoles=listOf("QB","RB","LT","LG","C","RG","RT","WR","WR","TE","WR")
 private val defenseRoles=listOf("DE","DT","DT","DE","LB","LB","LB","CB","CB","S","S")
 
-private fun createPlays(game:GameRecord,prediction:Prediction):List<SimPlay>{
+private fun createPlays(game:GameRecord,prediction:Prediction,metrics:Map<String,TeamMetrics>):List<SimPlay>{
     val rng=Random((game.gameId+":"+prediction.id+":v15").hashCode())
     val result=mutableListOf<SimPlay>()
     var elapsed=0;var awayScore=0;var homeScore=0;var away=true;var field=25;var down=1;var distance=10
     while(elapsed<3600 && result.size<230){
         val beforeDown=down;val beforeDistance=distance;val start=field
-        val pass=rng.nextDouble()<(if(down>=3).68 else .54)
+        val offense=metrics[if(away)game.awayTeam else game.homeTeam]?.takeIf{it.games>=2}
+        val defense=metrics[if(away)game.homeTeam else game.awayTeam]?.takeIf{it.games>=2}
+        val epaEdge=if(offense!=null && defense!=null) (offense.offEpaPerPlay-defense.defEpaAllowedPerPlay).coerceIn(-0.5,0.5) else 0.0
+        val pass=rng.nextDouble()<((if(down>=3).68 else .54)+epaEdge*.10).coerceIn(.35,.82)
         val roll=rng.nextDouble()
         var kind:String;var yards:Int;var points=0;var change=false
         if(pass){
             when{
                 roll<.027->{kind="Intercepcion";yards=0;change=true}
                 roll<.105->{kind="Sack";yards=-rng.nextInt(2,10)}
-                roll<.42->{kind="Pase incompleto";yards=0}
-                else->{kind="Pase completo";yards=(rng.nextDouble()*rng.nextDouble()*44).toInt()+1}
+                roll<(.42-epaEdge*.10).coerceIn(.29,.55)->{kind="Pase incompleto";yards=0}
+                else->{kind="Pase completo";yards=((rng.nextDouble()*rng.nextDouble()*44)*(1+epaEdge*.45)).toInt().coerceAtLeast(0)+1}
             }
         }else{
             when{
                 roll<.012->{kind="Fumble";yards=0;change=true}
                 roll<.20->{kind="Carrera detenida";yards=-rng.nextInt(0,4)}
-                else->{kind="Carrera";yards=(rng.nextDouble()*rng.nextDouble()*19).toInt()+1}
+                else->{kind="Carrera";yards=((rng.nextDouble()*rng.nextDouble()*19)*(1+epaEdge*.35)).toInt().coerceAtLeast(0)+1}
             }
         }
         field=(field+yards).coerceIn(1,100)
@@ -81,7 +86,9 @@ private fun playerName(roster:GameRosterIntelligence?,away:Boolean,role:String,i
 
 @Composable
 fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligence?=null){
-    val plays=remember(game.gameId,prediction.id){createPlays(game,prediction)}
+    val context=LocalContext.current
+    val metrics=remember(game.gameId,game.season) { try { DbHelper(context).use { db -> db.loadMetrics(game.season).associateBy { it.team } } } catch (_:Exception) { emptyMap<String,TeamMetrics>() } }
+    val plays=remember(game.gameId,prediction.id,metrics){createPlays(game,prediction,metrics)}
     var index by remember(game.gameId,prediction.id){mutableIntStateOf(0)}
     var playing by remember(game.gameId,prediction.id){mutableStateOf(false)}
     var speed by remember{mutableIntStateOf(1)}
@@ -199,6 +206,16 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 putExtra("awayColor",teamBrand(game.awayTeam).primary.toArgb())
                 putExtra("homeColor",teamBrand(game.homeTeam).primary.toArgb())
                 putExtra("simcastGameKey",game.gameId+":"+prediction.id)
+                putExtra("simcastStrengths",org.json.JSONObject().apply {
+                    for(code in listOf(game.awayTeam,game.homeTeam)) {
+                        val m=metrics[code]
+                        put(code,org.json.JSONObject().apply {
+                            put("season",game.season);put("source","NFL Totals Lab team_metrics");put("sample_games",m?.games ?: 0)
+                            if(m!=null && m.games>=2) { put("off_epa",m.offEpaPerPlay);put("def_epa_allowed",m.defEpaAllowedPerPlay);put("success_rate",m.successRate);put("explosive_rate",m.explosiveRate) }
+                            else put("status","insufficient_data")
+                        })
+                    }
+                }.toString())
                 putExtra("simcastRoster",org.json.JSONObject().apply {
                     for ((code, team) in listOf(game.awayTeam to roster?.away, game.homeTeam to roster?.home)) {
                         put(code,org.json.JSONObject().put("players",org.json.JSONArray().apply {
