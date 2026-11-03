@@ -198,6 +198,16 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 putExtra("qb",qbName); putExtra("receiver",receiverName); putExtra("runner",rbName)
                 putExtra("awayColor",teamBrand(game.awayTeam).primary.toArgb())
                 putExtra("homeColor",teamBrand(game.homeTeam).primary.toArgb())
+                putExtra("simcastGameKey",game.gameId+":"+prediction.id)
+                putExtra("simcastRoster",org.json.JSONObject().apply {
+                    for ((code, team) in listOf(game.awayTeam to roster?.away, game.homeTeam to roster?.home)) {
+                        put(code,org.json.JSONObject().put("players",org.json.JSONArray().apply {
+                            team?.players?.forEach { pl -> put(org.json.JSONObject()
+                                .put("name",pl.name).put("position",pl.position)
+                                .put("unavailable",pl.unavailable)) }
+                        }))
+                    }
+                }.toString())
             })
         }){Text("Abrir Simcast 2.0 · Stadium")}
         Text("EXPERIMENTAL: nombres proceden del roster si esta disponible; las asignaciones y rutas son ilustrativas, no tracking real. Motor sin calibracion historica. No altera Core, Ranking ni apuestas.",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)

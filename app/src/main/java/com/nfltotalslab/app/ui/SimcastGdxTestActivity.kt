@@ -24,16 +24,26 @@ import org.json.JSONArray
 class SimcastGdxTestActivity : AndroidApplication() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val simcastRaw = intent.getStringExtra("plays") ?: "[]"
+        val simcastStats = SimcastStats24(intent.getStringExtra("away") ?: "AWAY",
+            intent.getStringExtra("home") ?: "HOME", simcastRaw,
+            intent.getStringExtra("simcastRoster") ?: "{}",
+            intent.getStringExtra("simcastGameKey") ?: "unknown")
+        try {
+            val dir = java.io.File(filesDir,"simcast_reports").apply { mkdirs() }
+            val key = (intent.getStringExtra("simcastGameKey") ?: "game").replace(Regex("[^A-Za-z0-9_-]"),"_")
+            java.io.File(dir,"${key}_v24.json").writeText(simcastStats.report(org.json.JSONArray(simcastRaw).length()).toString(2))
+        } catch (_: Exception) { }
         initialize(Broadcast22(
             intent.getStringExtra("away") ?: "AWAY",
             intent.getStringExtra("home") ?: "HOME",
-            intent.getStringExtra("plays") ?: "[]",
+            simcastRaw,
             intent.getDoubleExtra("line", 0.0).toFloat(),
             intent.getStringExtra("qb") ?: "QB",
             intent.getStringExtra("receiver") ?: "WR",
             intent.getStringExtra("runner") ?: "RB",
             intent.getIntExtra("awayColor", 0xFF006778.toInt()),
-            intent.getIntExtra("homeColor", 0xFF241773.toInt())
+            intent.getIntExtra("homeColor", 0xFF241773.toInt()), simcastStats
         ), AndroidApplicationConfiguration().apply { useImmersiveMode = true })
     }
 }
@@ -47,7 +57,7 @@ private data class SimSnap(
 private class Broadcast22(
     private val away: String, private val home: String, raw: String,
     private val line: Float, private val qb: String, private val wr: String,
-    private val rb: String, awayArgb: Int, homeArgb: Int
+    private val rb: String, awayArgb: Int, homeArgb: Int, private val stats: SimcastStats24
 ) : ApplicationAdapter() {
     private val plays = mutableListOf<SimSnap>()
     private lateinit var shapes: ShapeRenderer
@@ -58,6 +68,10 @@ private class Broadcast22(
     private var yardNumbers: Texture? = null
     private var qbTag: Texture? = null
     private var skillTag: Texture? = null
+    private var statsTexture: Texture? = null
+    private var statsKey = ""
+    private var showStats = false
+    private var reportVisibleUntil = 0
     private var hudKey = ""
     private var controlsKey = ""
     private var index = 0
@@ -288,6 +302,32 @@ private class Broadcast22(
         return textureFrom(bitmap)
     }
 
+    private fun makeStatsPanel(until: Int): Texture {
+        val bmp = Bitmap.createBitmap(1200, 650, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = 0xF0091526.toInt()
+        c.drawRoundRect(0f, 0f, 1200f, 650f, 24f, 24f, p)
+        p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+        p.color = android.graphics.Color.WHITE
+        p.textSize = 40f
+        c.drawText("SIMCAST PLAYER PROPS - $until/${plays.size}", 34f, 55f, p)
+        p.textSize = 26f
+        p.color = 0xFFFFCD63.toInt()
+        c.drawText("SIMULACION · NO SON RESULTADOS REALES", 34f, 94f, p)
+        p.color = android.graphics.Color.WHITE
+        p.textSize = 28f
+        var y = 139f
+        for (row in stats.summary(until).take(16)) {
+            c.drawText(row.take(73), 35f, y, p)
+            y += 31f
+        }
+        p.textSize = 22f
+        p.color = 0xFFB4C4D7.toInt()
+        c.drawText("Toca arriba a la derecha para cerrar | JSON en simcast_reports", 34f, 622f, p)
+        return textureFrom(bmp)
+    }
+
     private fun makeControls(): Texture {
         val w = 1200
         val h = 96
@@ -361,7 +401,8 @@ private class Broadcast22(
     override fun render() {
         if (Gdx.input.justTouched()) {
             val tap = camera.unproject(Vector3(Gdx.input.x.toFloat(), Gdx.input.y.toFloat(), 0f))
-            if (tap.y < 9f) when {
+            if (tap.y > 62f && tap.x > 104f) showStats = !showStats
+            else if (tap.y < 9f) when {
                 tap.x < 24f -> paused = !paused
                 tap.x < 48f -> speed = if (speed >= 4f) 1f else speed * 2f
                 tap.x < 72f -> { phase = 0f; paused = false }
@@ -377,6 +418,13 @@ private class Broadcast22(
             }
         }
         val p = plays[index]
+        val until = (index + 1).coerceAtMost(plays.size)
+        if (index == plays.lastIndex && phase > duration - .2f) showStats = true
+        if (showStats && statsKey != "$until") {
+            statsTexture?.dispose()
+            statsTexture = makeStatsPanel(until)
+            statsKey = "$until"
+        }
         val controlKey = "${paused}:${speed}:${labels}"
         if (controlKey != controlsKey) {
             controls?.dispose()
@@ -470,10 +518,11 @@ private class Broadcast22(
         }
         hud?.let { batch.draw(it, 0f, 62f, 120f, 13f) }
         controls?.let { batch.draw(it, 0f, 0f, 120f, 9.5f) }
+        if (showStats) statsTexture?.let { batch.draw(it, 13f, 12f, 94f, 49f) }
         batch.end()
     }
 
     override fun dispose() {
-        hud?.dispose(); controls?.dispose(); yardNumbers?.dispose(); qbTag?.dispose(); skillTag?.dispose(); shapes.dispose(); batch.dispose()
+        statsTexture?.dispose(); hud?.dispose(); controls?.dispose(); yardNumbers?.dispose(); qbTag?.dispose(); skillTag?.dispose(); shapes.dispose(); batch.dispose()
     }
 }
