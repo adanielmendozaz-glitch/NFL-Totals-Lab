@@ -76,7 +76,7 @@ class SimcastGdxTestActivity : AndroidApplication() {
                 .put("monte_carlo_props",org.json.JSONArray(intent.getStringExtra("simcastProps") ?: "[]"))
                 // V4.4 DRIVE ENGINE: audit the actual profiles used.
                 .put("nflverse_profile",JSONObject(intent.getStringExtra("simcastNflverse") ?: "{}"))
-                .put("engine_version","V4.4-drive-engine-experimental")
+                .put("engine_version","V4.5-phase2-scoring-experimental")
                 .put("export_schema", "simcast-json-v2")
                 .toString(2)
         } catch (e: Exception) {

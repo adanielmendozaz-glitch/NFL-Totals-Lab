@@ -28,7 +28,10 @@ internal object SimcastV3Engine {
             .distinctBy { it.name.trim().lowercase() }
             .sortedWith(compareBy<V3Athlete> { !it.starter }.thenBy { it.depth.coerceAtLeast(1) })
         val candidates=when {
-            positions==setOf("QB") -> ranked.take(1) // one QB per simulated game; substitutions not yet modelled
+            positions==setOf("QB") -> {
+                val starters=ranked.filter { it.starter }
+                if(starters.size==1) starters else ranked.sortedWith(compareBy<V3Athlete> { it.depth.coerceAtLeast(1) }.thenBy { !it.starter }).take(1)
+            }
             positions==setOf("RB","QB") -> ranked.filter { it.position.uppercase()=="RB" }.take(3)
             else -> ranked.filter { it.position.uppercase()=="WR" }.take(5) +
                 ranked.filter { it.position.uppercase()=="TE" }.take(2) +
@@ -70,15 +73,31 @@ internal object SimcastV3Engine {
             val pass=rng.nextDouble()<(if(down>=3) (1.0-rushShare+.15) else 1.0-rushShare).coerceIn(.25,.9)
             val beforeField=field;val beforeDown=down;val beforeDistance=distance
             // V4.1: decide special teams before generating an offensive play.
-            if(down==4 && (field>=62 || distance>2)){
-                val kick=if(field>=62) "Intento de gol de campo" else "Despeje"
-                val points=if(kick=="Intento de gol de campo" &&
-                    rng.nextDouble()<(.92-(100-field)*.012).coerceIn(.35,.9)) 3 else 0
-                tick(rng.nextInt(5,12))
-                if(away)awayScore+=points else homeScore+=points
-                plays+=V3Play(away,field,field,down,distance,elapsed,kick,0,points,awayScore,homeScore)
-                away=!away;field=25;down=1;distance=10;drivePlayCount=0;driveClock=0
-                continue
+            if(down==4){
+                val remaining=3600-elapsed
+                val gap=if(away)awayScore-homeScore else homeScore-awayScore
+                val fgLength=117-field
+                val inRange=fgLength<=60
+                val short=distance<=2
+                val desperation=remaining<=180 && gap<0
+                val go=when {
+                    desperation && (!inRange || gap<=-4) -> true
+                    field>=95 && short -> true
+                    field>=50 && short && rng.nextDouble()<.38 -> true
+                    else -> false
+                }
+                if(!go){
+                    val kick=if(inRange) "Intento de gol de campo" else "Despeje"
+                    val success=inRange && rng.nextDouble()<(.98-.012*(fgLength-30).coerceAtLeast(0)).coerceIn(.25,.98)
+                    val points=if(success) 3 else 0
+                    tick(rng.nextInt(5,12))
+                    if(away)awayScore+=points else homeScore+=points
+                    plays+=V3Play(away,field,field,down,distance,elapsed,kick,0,points,awayScore,homeScore)
+                    away=!away
+                    field=if(inRange && !success) (107-field).coerceIn(20,99) else 25
+                    down=1;distance=min(10,100-field);drivePlayCount=0;driveClock=0
+                    continue
+                }
             }
             val rusher=if(!pass)pick(rng,roster,setOf("RB","QB"),"$team RB") else null
             val target=if(pass)pick(rng,roster,setOf("WR","TE","RB"),"$team WR") else null

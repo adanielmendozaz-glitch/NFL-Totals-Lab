@@ -82,7 +82,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val actor=if(p.kind.contains("Pase")||p.kind=="Sack"||p.kind=="Intercepcion")qbName else rbName
     val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("NFL SIMCAST V4.4 · NFLVERSE DRIVE ENGINE",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
+        Text("NFL SIMCAST V4.5 · DRIVE & SCORING",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
         Text("NFLVERSE ${game.season} · perfiles ${nflverseProfiles.size} · ${game.awayTeam}: ${nflverseProfiles[game.awayTeam]?.sampleGames ?: 0} juegos / ${game.homeTeam}: ${nflverseProfiles[game.homeTeam]?.sampleGames ?: 0} juegos",color=Color(0xFFFFC861),style=MaterialTheme.typography.bodySmall)
         Text("DATOS ${game.season} · ${if(metrics[game.awayTeam]?.games ?: 0 >= 2 && metrics[game.homeTeam]?.games ?: 0 >= 2) "EPA registrado" else "EPA insuficiente: fallback"} · ${features.size} métricas matchup · ${rosterMap.values.sumOf{it.size}} jugadores",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
@@ -225,7 +225,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                     }
                 }.toString())
             })
-        }){Text("ABRIR SIMCAST V3.1 · PRO STADIUM")}
+        }){Text("ABRIR SIMCAST V4.5 · PRO STADIUM")}
         OutlinedButton(onClick={showProps=!showProps}){Text(if(showProps)"Ocultar Player Props" else "Player Props · Monte Carlo (400)")}
         if(showProps){
             Text("400 simulaciones · línea de prueba P50+0.5 (NO es línea de mercado).",color=Color(0xFFFFC861))
