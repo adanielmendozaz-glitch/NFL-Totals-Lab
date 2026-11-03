@@ -8,26 +8,73 @@ import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.OrthographicCamera
+import com.badlogic.gdx.graphics.g2d.BitmapFont
+import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer
-import kotlin.math.sin
-import kotlin.math.cos
+import com.badlogic.gdx.math.MathUtils
+import com.badlogic.gdx.math.Vector2
 
-/** Isolated rendering test: never instantiated inside Compose. */
+/** Scripted animation only; no effect on Core predictions or actual play data. */
 class SimcastGdxTestActivity : AndroidApplication() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        initialize(SimcastTestScene(), AndroidApplicationConfiguration().apply {
+        initialize(TacticalPassingDemo(), AndroidApplicationConfiguration().apply {
             useImmersiveMode = false
             useWakelock = false
         })
     }
 }
-private class SimcastTestScene : ApplicationAdapter() {
+
+private class TacticalPassingDemo : ApplicationAdapter() {
     private lateinit var shapes: ShapeRenderer
     private lateinit var camera: OrthographicCamera
-    private var t = 0f
+    private lateinit var batch: SpriteBatch
+    private lateinit var font: BitmapFont
+    private var elapsed = 0f
+    private val offense = arrayOf(
+        Vector2(46f, 26.6f), Vector2(43f, 22f),
+        Vector2(50f, 18f), Vector2(50f, 22f), Vector2(50f, 26.6f),
+        Vector2(50f, 31f), Vector2(50f, 35f),
+        Vector2(49f, 5f), Vector2(49f, 48f),
+        Vector2(49f, 12f), Vector2(49f, 41f)
+    )
+    private val defense = Array(11) { i ->
+        Vector2(55f + (i % 3) * 3f, 5f + (i / 3) * 13f + (i % 3) * 2f)
+    }
+    private fun ease(t: Float): Float {
+        val u = MathUtils.clamp(t, 0f, 1f)
+        return u * u * (3f - 2f * u)
+    }
+    private fun player(i: Int, t: Float): Vector2 {
+        val p = offense[i].cpy()
+        val a = (t - 1.1f).coerceAtLeast(0f)
+        when (i) {
+            0 -> p.x -= 5f * ease(a / 2f)
+            1 -> { p.x += 7f * ease(a / 3f); p.y += 3f * ease(a / 3f) }
+            in 2..6 -> { p.x += 2f * ease(a / 1.5f); p.y += .3f * MathUtils.sin(a * 2f + i) }
+            7 -> { p.x += 20f * ease(a / 5f); p.y += 10f * ease((a - 2f) / 2f) }
+            8 -> { p.x += 19f * ease(a / 5f); p.y -= 7f * ease((a - 2.5f) / 2f) }
+            9 -> { p.x += 13f * ease(a / 3.5f); p.y += 8f * ease((a - 2f) / 2f) }
+            10 -> { p.x += 14f * ease(a / 3.5f); p.y -= 8f * ease((a - 2f) / 2f) }
+        }
+        return p
+    }
+    private fun defender(i: Int, t: Float): Vector2 {
+        val p = defense[i].cpy()
+        val a = (t - 1.1f).coerceAtLeast(0f)
+        if (i < 5) p.x -= 5f * ease(a / 2f)
+        else {
+            val receiver = player(intArrayOf(7, 8, 9, 10, 7, 8)[i - 5], t)
+            val pursuit = ease(a / 6f)
+            p.x = MathUtils.lerp(p.x, receiver.x - 1.5f, pursuit)
+            p.y = MathUtils.lerp(p.y, receiver.y + if (i % 2 == 0) 2f else -2f, pursuit)
+        }
+        return p
+    }
     override fun create() {
         shapes = ShapeRenderer()
+        batch = SpriteBatch()
+        font = BitmapFont().apply { data.setScale(.19f) }
         camera = OrthographicCamera()
         camera.setToOrtho(false, 120f, 53.3f)
     }
@@ -36,37 +83,60 @@ private class SimcastTestScene : ApplicationAdapter() {
         camera.setToOrtho(false, 120f, 53.3f)
     }
     override fun render() {
-        t += Gdx.graphics.deltaTime.coerceIn(0f, .05f)
-        Gdx.gl.glClearColor(.05f, .30f, .17f, 1f)
+        elapsed += Gdx.graphics.deltaTime.coerceIn(0f, .05f)
+        val t = elapsed % 11f
+        Gdx.gl.glClearColor(.04f, .26f, .13f, 1f)
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
         camera.update()
         shapes.projectionMatrix = camera.combined
+        batch.projectionMatrix = camera.combined
         shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.color = Color(.12f,.20f,.43f,1f)
-        shapes.rect(0f,0f,10f,53.3f)
-        shapes.rect(110f,0f,10f,53.3f)
-        for(i in 0 until 22) {
-            val offense = i < 11
-            val n = i % 11
-            val x0 = if(offense) 49f - (n%3)*2f else 59f+(n%3)*3f
-            val y0 = 5f + (n/3)*13f + (n%3)*2f
-            val phase = (t % 5f)/5f
-            val x = x0 + (if(offense) 14f else -7f)*phase + sin(t*1.3f+n)*.8f
-            val y = y0 + sin(t*.9f+n*1.4f)*3f*phase
-            shapes.color = if(offense) Color.WHITE else Color(.15f,.58f,.95f,1f)
-            shapes.circle(x,y,1.1f,12)
+        shapes.color = Color(.10f, .20f, .40f, 1f)
+        shapes.rect(0f, 0f, 10f, 53.3f)
+        shapes.rect(110f, 0f, 10f, 53.3f)
+        for (i in 0 until 22) {
+            val p = if (i < 11) player(i, t) else defender(i - 11, t)
+            shapes.color = if (i < 11) Color.WHITE else Color(.13f, .59f, .96f, 1f)
+            shapes.circle(p.x, p.y, 1.05f, 16)
+        }
+        val qb = player(0, t)
+        val receiver = player(7, t)
+        val ball = when {
+            t < 1.1f -> Vector2(50f, 26.6f)
+            t < 5.2f -> qb.cpy().add(.8f, 0f)
+            t < 6.5f -> {
+                val u = (t - 5.2f) / 1.3f
+                Vector2(MathUtils.lerp(qb.x, receiver.x, u), MathUtils.lerp(qb.y, receiver.y, u) + 4f * MathUtils.sin(u * MathUtils.PI))
+            }
+            else -> receiver.cpy().add(.7f, 0f)
         }
         shapes.color = Color.ORANGE
-        shapes.circle(51f+14f*(t%5f)/5f,26f+sin(t*2f)*3f,.65f,12)
+        shapes.circle(ball.x, ball.y, .65f, 12)
         shapes.end()
         shapes.begin(ShapeRenderer.ShapeType.Line)
         shapes.color = Color.WHITE
-        for(yard in 10..110 step 5) shapes.line(yard.toFloat(),0f,yard.toFloat(),53.3f)
+        for (x in 10..110 step 5) shapes.line(x.toFloat(), 0f, x.toFloat(), 53.3f)
         shapes.color = Color.CYAN
-        shapes.line(55f,0f,55f,53.3f)
+        shapes.line(50f, 0f, 50f, 53.3f)
         shapes.color = Color.YELLOW
-        shapes.line(65f,0f,65f,53.3f)
+        shapes.line(60f, 0f, 60f, 53.3f)
         shapes.end()
+        batch.begin()
+        val phase = when {
+            t < 1.1f -> "FORMATION"
+            t < 5.2f -> "SNAP + ROUTES"
+            t < 6.5f -> "PASS"
+            t < 9.4f -> "RECEPTION + PURSUIT"
+            else -> "RESET"
+        }
+        font.draw(batch, "SIMCAST V1.7 - TACTICAL DEMO", 12f, 51f)
+        font.draw(batch, "$phase | ${Gdx.graphics.framesPerSecond} FPS", 12f, 48f)
+        font.draw(batch, "ILLUSTRATIVE PLAY - NOT REAL TRACKING", 12f, 4f)
+        batch.end()
     }
-    override fun dispose() { shapes.dispose() }
+    override fun dispose() {
+        shapes.dispose()
+        batch.dispose()
+        font.dispose()
+    }
 }
