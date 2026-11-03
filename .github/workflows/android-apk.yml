@@ -34,6 +34,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/nfl-signing"
           printf '%s' "$NFL_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/nfl-signing/nfl-totals-lab-dev.jks"
 
+      - name: Install nflverse profile dependencies
+        run: python3 -m pip install --user pandas pyarrow
+
+      - name: Generate REAL nflverse drive profiles
+        run: python3 tools/nflverse/build_profiles.py
+
       - name: Build debug APK
         env:
           NFL_KEYSTORE_PATH: ${{ runner.temp }}/nfl-signing/nfl-totals-lab-dev.jks

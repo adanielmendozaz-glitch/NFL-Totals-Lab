@@ -14,6 +14,8 @@ internal data class V3Prop(val team:String,val player:String,val market:String,v
     val p10:Double,val median:Double,val p90:Double,val sample:Int,val draws:IntArray) {
     fun pOver(line:Double):Double=draws.count{it>line}.toDouble()/draws.size.coerceAtLeast(1)
 }
+internal data class V43DriveProfile(val drivesPerGame:Double,val playsPerDrive:Double,
+    val secondsPerDrive:Double,val secondsPerPlay:Double,val passRate:Double,val sampleGames:Int)
 internal object SimcastV3Engine {
     private fun pick(r:Random, athletes:List<V3Athlete>, positions:Set<String>,fallback:String):V3Athlete {
         // V4: use a plausible rotation, not the entire historical roster.
@@ -40,9 +42,11 @@ internal object SimcastV3Engine {
         return candidates.last()
     }
     fun simulate(awayCode:String,homeCode:String,seed:Int,metrics:Map<String,TeamMetrics>,
-                 features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>):List<V3Play>{
+                 features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>,profiles:Map<String,V43DriveProfile> = emptyMap()):List<V3Play>{
         val rng=Random(seed);val plays=ArrayList<V3Play>();var elapsed=0;var away=true
         var awayScore=0;var homeScore=0;var field=25;var down=1;var distance=10
+        var drivePlayCount=0
+        var driveClock=0
         val featureMap=features.groupBy { it.team }
         fun rate(team:String,key:String):Double? = featureMap[team]?.firstOrNull{it.feature==key && it.sampleN>=20}?.value
         // V4.2 CLOCK ENGINE: situational clock, quarter boundaries
@@ -52,8 +56,10 @@ internal object SimcastV3Engine {
             val off=metrics[team]?.takeIf{it.games>=2};val def=metrics[opponent]?.takeIf{it.games>=2}
             val edge=if(off!=null && def!=null)(off.offEpaPerPlay-def.defEpaAllowedPerPlay).coerceIn(-.65,.65) else 0.0
             val roster=rosters[team].orEmpty();val qb=pick(rng,roster,setOf("QB"),"$team QB")
-            val rushShare=(rate(team,"rush_rate")?:.43).coerceIn(.25,.65)
-            val pass=rng.nextDouble()<(if(down>=3).78 else 1.0-rushShare).coerceIn(.30,.86)
+            val profile=profiles[team]
+            val historicalPass=profile?.passRate?.coerceIn(.25,.82)
+            val rushShare=(if(historicalPass!=null)1.0-historicalPass else (rate(team,"rush_rate")?:.43)).coerceIn(.18,.75)
+            val pass=rng.nextDouble()<(if(down>=3) (1.0-rushShare+.15) else 1.0-rushShare).coerceIn(.25,.9)
             val beforeField=field;val beforeDown=down;val beforeDistance=distance
             // V4.1: decide special teams before generating an offensive play.
             if(down==4 && (field>=62 || distance>2)){
@@ -63,7 +69,7 @@ internal object SimcastV3Engine {
                 tick(rng.nextInt(5,12))
                 if(away)awayScore+=points else homeScore+=points
                 plays+=V3Play(away,field,field,down,distance,elapsed,kick,0,points,awayScore,homeScore)
-                away=!away;field=25;down=1;distance=10
+                away=!away;field=25;down=1;distance=10;drivePlayCount=0;driveClock=0
                 continue
             }
             val rusher=if(!pass)pick(rng,roster,setOf("RB","QB"),"$team RB") else null
@@ -96,8 +102,22 @@ internal object SimcastV3Engine {
             }
             val scoreGap=if(away)awayScore-homeScore else homeScore-awayScore
             val hurry=(elapsed>=2700 && scoreGap<0) || (elapsed%1800>=1680 && scoreGap<=0)
-            val seconds=if(kind=="Pase incompleto"||kind=="Intercepcion")rng.nextInt(5,12) else if(hurry)rng.nextInt(9,23) else rng.nextInt(25,42)
+            // nflverse: drive duration, plays/drive, seconds/play and pass share affect actual simulation.
+            val baseSeconds=(profile?.secondsPerPlay ?: 31.0).coerceIn(18.0,45.0)
+            val driveBudget=(profile?.secondsPerDrive ?: 175.0).coerceIn(75.0,350.0)
+            val targetPlays=(profile?.playsPerDrive ?: 6.0).coerceIn(3.0,11.0)
+            val expectedRemaining=(driveBudget-driveClock).coerceAtLeast(5.0)
+            val budgetPerPlay=(expectedRemaining/(targetPlays-drivePlayCount).coerceAtLeast(1.0)).coerceIn(8.0,45.0)
+            val nominal=(baseSeconds*.65+budgetPerPlay*.35)
+            val seconds=when {
+                kind=="Pase incompleto"||kind=="Intercepcion" -> rng.nextInt(5,12)
+                hurry -> (nominal*.52+rng.nextInt(-3,4)).toInt().coerceIn(8,24)
+                else -> (nominal+rng.nextInt(-7,8)).toInt().coerceIn(14,45)
+            }
+            val clockBefore=elapsed
             tick(seconds)
+            driveClock+=elapsed-clockBefore
+            drivePlayCount++
             if(away)awayScore+=points else homeScore+=points
             plays+=V3Play(away,beforeField,field,beforeDown,beforeDistance,elapsed,kind,yards,points,awayScore,homeScore,
                 if(pass)qb.name else "",if(pass)target!!.name else "",if(pass)target!!.position else "",rusher?.name?:"")
@@ -105,16 +125,17 @@ internal object SimcastV3Engine {
                 val downs=points==0 && beforeDown==4 && kind!="Intercepcion" && kind!="Fumble"
                 away=!away
                 field=if(kind=="Intercepcion"||kind=="Fumble"||downs)(100-field).coerceIn(1,99) else 25
-                down=1;distance=10
+                down=1;distance=10;drivePlayCount=0;driveClock=0
             }
         }
         return plays
     }
     fun props(away:String,home:String,seed:Int,metrics:Map<String,TeamMetrics>,features:List<MatchupFeature>,
-              rosters:Map<String,List<V3Athlete>>,iterations:Int=400):List<V3Prop>{
+              rosters:Map<String,List<V3Athlete>>,iterations:Int=400,
+              profiles:Map<String,V43DriveProfile> = emptyMap()):List<V3Prop>{
         val values=linkedMapOf<Triple<String,String,String>,IntArray>()
         for(i in 0 until iterations){
-            val game=simulate(away,home,seed+i*7919,metrics,features,rosters)
+            val game=simulate(away,home,seed+i*7919,metrics,features,rosters,profiles)
             val totals=linkedMapOf<Triple<String,String,String>,Int>()
             for(p in game){
                 val team=if(p.away)away else home

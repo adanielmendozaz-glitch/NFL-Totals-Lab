@@ -31,8 +31,8 @@ private val offenseRoles=listOf("QB","RB","LT","LG","C","RG","RT","WR","WR","TE"
 private val defenseRoles=listOf("DE","DT","DT","DE","LB","LB","LB","CB","CB","S","S")
 
 private fun createPlays(game:GameRecord,prediction:Prediction,metrics:Map<String,TeamMetrics>,
-    features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>):List<SimPlay> =
-    SimcastV3Engine.simulate(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":v3").hashCode(),metrics,features,rosters)
+    features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>,profiles:Map<String,V43DriveProfile>):List<SimPlay> =
+    SimcastV3Engine.simulate(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":v3").hashCode(),metrics,features,rosters,profiles)
         .map { SimPlay(it.away,it.start,it.finish,it.down,it.distance,0,it.kind,it.yards,it.points,
             it.awayScore,it.homeScore,it.elapsed,it.passer,it.receiver,it.receiverPosition,it.rusher) }
 
@@ -50,8 +50,9 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val features=remember(game.gameId,game.season){try{DbHelper(context).use{it.loadMatchupFeatures(game.season)}}catch(_:Exception){emptyList<MatchupFeature>()}}
     val rosterMap=remember(roster){ listOf(game.awayTeam to roster?.away,game.homeTeam to roster?.home).associate { (code,team) ->
         code to (team?.players?.map{V3Athlete(it.name,it.position,it.coreStarter,it.depthRank,it.unavailable)} ?: emptyList()) } }
-    val plays=remember(game.gameId,prediction.id,metrics,features,rosterMap){createPlays(game,prediction,metrics,features,rosterMap)}
-    val props=remember(game.gameId,prediction.id,metrics,features,rosterMap){SimcastV3Engine.props(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":props").hashCode(),metrics,features,rosterMap)}
+    val nflverseProfiles=remember(game.season,game.week){NflverseV43.load(context,game.season,game.week)}
+    val plays=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles){createPlays(game,prediction,metrics,features,rosterMap,nflverseProfiles)}
+    val props=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles){SimcastV3Engine.props(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":props").hashCode(),metrics,features,rosterMap,profiles=nflverseProfiles)}
     var showProps by remember { mutableStateOf(false) }
     var index by remember(game.gameId,prediction.id){mutableIntStateOf(0)}
     var playing by remember(game.gameId,prediction.id){mutableStateOf(false)}
@@ -76,7 +77,8 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val actor=if(p.kind.contains("Pase")||p.kind=="Sack"||p.kind=="Intercepcion")qbName else rbName
     val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
-        Text("NFL SIMCAST V3 · INTELLIGENCE + MARKOV + MONTE CARLO",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
+        Text("NFL SIMCAST V4.3 · NFLVERSE DRIVES + CLOCK + MONTE CARLO",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
+        Text("NFLVERSE ${game.season} · perfiles ${nflverseProfiles.size} · ${game.awayTeam}: ${nflverseProfiles[game.awayTeam]?.sampleGames ?: 0} juegos / ${game.homeTeam}: ${nflverseProfiles[game.homeTeam]?.sampleGames ?: 0} juegos",color=Color(0xFFFFC861),style=MaterialTheme.typography.bodySmall)
         Text("DATOS ${game.season} · ${if(metrics[game.awayTeam]?.games ?: 0 >= 2 && metrics[game.homeTeam]?.games ?: 0 >= 2) "EPA registrado" else "EPA insuficiente: fallback"} · ${features.size} métricas matchup · ${rosterMap.values.sumOf{it.size}} jugadores",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(12.dp)){
             listOf(game.awayTeam,game.homeTeam).forEach { code ->
