@@ -132,7 +132,30 @@ internal class SimcastStats24(private val away: String, private val home: String
         for (team in listOf(away, home)) for (p in accum.getValue(team).values) playerArray.put(p)
         val eventArray = JSONArray()
         for (i in 0 until stop) eventArray.put(events.getJSONObject(i))
-        return JSONObject().put("schema", "simcast-v3-possession-montecarlo-experimental").put("game_key", gameKey)
+        // V4: independently reconcile the event ledger with individual box-score fields.
+        val audit = JSONArray()
+        for (team in listOf(away, home)) {
+            var passYards=0;var recYards=0;var rushYards=0;var completions=0;var receptions=0
+            for (j in 0 until playerArray.length()) {
+                val pl=playerArray.getJSONObject(j)
+                if(pl.optString("team")!=team)continue
+                passYards+=pl.optInt("passing_yards");recYards+=pl.optInt("receiving_yards")
+                rushYards+=pl.optInt("rushing_yards");completions+=pl.optInt("completions");receptions+=pl.optInt("receptions")
+            }
+            var expectedPass=0;var expectedRush=0
+            for (j in 0 until eventArray.length()) {
+                val ev=eventArray.getJSONObject(j)
+                if(ev.optString("team")!=team)continue
+                if(ev.optString("kind").contains("Pase completo",true))expectedPass+=ev.optInt("yards")
+                if(ev.optString("kind").contains("Carrera",true))expectedRush+=ev.optInt("yards")
+            }
+            val ok=passYards==recYards && passYards==expectedPass && rushYards==expectedRush && completions==receptions
+            audit.put(JSONObject().put("team",team).put("status",if(ok)"PASS" else "FAIL")
+                .put("passing_yards",passYards).put("receiving_yards",recYards)
+                .put("rushing_yards",rushYards).put("expected_pass_yards",expectedPass)
+                .put("expected_rush_yards",expectedRush).put("completions",completions).put("receptions",receptions))
+        }
+        return JSONObject().put("schema", "simcast-v4-ledger-audit-experimental").put("audit",audit).put("game_key", gameKey)
             .put("away", away).put("home", home).put("plays_processed", stop)
             .put("plays_total", plays.length()).put("final", stop == plays.length())
             .put("strengths", strengths).put("players", playerArray).put("events", eventArray)

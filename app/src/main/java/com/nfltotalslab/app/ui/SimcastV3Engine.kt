@@ -16,10 +16,25 @@ internal data class V3Prop(val team:String,val player:String,val market:String,v
 }
 internal object SimcastV3Engine {
     private fun pick(r:Random, athletes:List<V3Athlete>, positions:Set<String>,fallback:String):V3Athlete {
-        val candidates=athletes.filter { !it.unavailable && it.position.uppercase() in positions }
-            .sortedWith(compareBy<V3Athlete> { !it.starter }.thenBy { it.depth })
+        // V4: use a plausible rotation, not the entire historical roster.
+        // A roster snapshot is NOT proof of official game-day availability.
+        val ranked=athletes.filter { !it.unavailable && it.name.isNotBlank() && it.position.uppercase() in positions }
+            .distinctBy { it.name.trim().lowercase() }
+            .sortedWith(compareBy<V3Athlete> { !it.starter }.thenBy { it.depth.coerceAtLeast(1) })
+        val candidates=when {
+            positions==setOf("QB") -> ranked.take(1) // one QB per simulated game; substitutions not yet modelled
+            positions==setOf("RB","QB") -> ranked.filter { it.position.uppercase()=="RB" }.take(3)
+            else -> ranked.filter { it.position.uppercase()=="WR" }.take(5) +
+                ranked.filter { it.position.uppercase()=="TE" }.take(2) +
+                ranked.filter { it.position.uppercase()=="RB" }.take(3)
+        }
         if(candidates.isEmpty())return V3Athlete(fallback,positions.first(),true,1,false)
-        val weights=candidates.mapIndexed { i,a -> (if(a.starter) 5.0 else 1.5)/(1+i*.85) }
+        val weights=candidates.map { a -> when(a.position.uppercase()) {
+            "WR" -> if(a.starter) 5.0 else 1.4
+            "TE" -> if(a.starter) 3.0 else 0.9
+            "RB" -> if(positions==setOf("RB","QB")) (if(a.starter) 8.0 else 1.5) else (if(a.starter) 2.0 else 0.6)
+            else -> 1.0
+        } / (1.0 + (a.depth.coerceAtLeast(1)-1)*0.55) }
         val target=r.nextDouble()*weights.sum();var sum=0.0
         for(i in candidates.indices){sum+=weights[i];if(target<=sum)return candidates[i]}
         return candidates.last()
