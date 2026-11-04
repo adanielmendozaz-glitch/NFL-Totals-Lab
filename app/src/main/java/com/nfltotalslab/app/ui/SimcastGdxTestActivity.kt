@@ -159,6 +159,8 @@ private class Broadcast22(
     private var labels = false
     private var follow = true
     private val duration = 6f
+    // STADIUM_VISUAL_V5_2: gameplay remains driven exclusively by the existing play ledger.
+    private val bodyDark = Color(.08f, .11f, .16f, 1f)
     private val awayAccent = awayArgb
     private val homeAccent = homeArgb
     private val awayColor = colorOf(awayArgb)
@@ -369,7 +371,7 @@ private class Broadcast22(
         text(clock, 658f, 85f, 70f)
         text("${p.down} & ${p.distance}", 922f, 77f, 45f, amber)
         text("POS ${if (p.away) away else home}", 541f, 132f, 33f, muted)
-        text("SIMCAST V3.1 | PRO STADIUM", 38f, 204f, 30f, muted)
+        text("SIMCAST V5 | PRO STADIUM 2D", 38f, 204f, 30f, muted)
         val total = p.awayScore + p.homeScore
         val needed = if (line > 0f) kotlin.math.floor((line - total).toDouble()).toInt() + 1 else 0
         text("TOTAL  $total", 574f, 205f, 37f)
@@ -389,7 +391,7 @@ private class Broadcast22(
         p.typeface = Typeface.create("sans-serif", Typeface.BOLD)
         p.color = android.graphics.Color.WHITE
         p.textSize = 40f
-        c.drawText("V3.1 | PLAYER INTELLIGENCE - $until/${plays.size}", 34f, 55f, p)
+        c.drawText("V5 | PLAYER INTELLIGENCE - $until/${plays.size}", 34f, 55f, p)
         p.textSize = 26f
         p.color = 0xFFFFCD63.toInt()
         c.drawText("SIMULACION · NO SON RESULTADOS REALES", 34f, 94f, p)
@@ -545,29 +547,61 @@ private class Broadcast22(
             shapes.color = if (x % 20 == 0) Color(.075f, .32f, .19f, 1f) else Color(.06f, .29f, .17f, 1f)
             shapes.rect(x.toFloat(), 10f, 10f, 52f)
         }
+        // Team-specific end zones; the field stays in a fixed overhead projection.
         shapes.color = awayColor; shapes.rect(0f, 10f, 10f, 52f)
         shapes.color = homeColor; shapes.rect(110f, 10f, 10f, 52f)
+        // 2D articulated overhead sprites: helmet, pads, jersey, limbs and footwork.
+        // Animation is visual only: no scores, opportunities or stats are altered.
         for (i in 0 until 22) {
             val v = pos(i, phase, p)
             val team = if (i < 11) attack else defense
-            val stride = if (phase > 1f) MathUtils.sin(phase * 10f + i) * .38f else 0f
-            shapes.color = Color(0f, 0f, 0f, .33f)
-            shapes.ellipse(v.x - .95f, v.y - 1.2f, 1.9f, .65f)
-            shapes.color = Color(.16f, .19f, .23f, 1f)
-            shapes.rect(v.x - .62f, v.y - 1.05f + stride, .42f, .75f)
-            shapes.rect(v.x + .2f, v.y - 1.05f - stride, .42f, .75f)
+            val d = if (i < 11) direction(p) else -direction(p)
+            val gait = if (phase > 1f && phase < 5.1f) MathUtils.sin(phase * 13f + i * .8f) else 0f
+            val rush = (i >= 11 && i < 15) || (i in 2..6)
+            val leg = gait * if (rush) .22f else .57f
+            val arm = -leg * .72f
+            val helmet = if (i < 11) Color(.93f, .94f, .96f, 1f) else team.cpy().lerp(white, .38f)
+            // Drop shadow and cleats.
+            shapes.color = Color(0f, 0f, 0f, .37f)
+            shapes.ellipse(v.x - 1.04f, v.y - 1.42f, 2.08f, .66f)
+            shapes.color = bodyDark
+            shapes.rect(v.x - .65f, v.y - 1.28f + leg, .46f, .86f)
+            shapes.rect(v.x + .18f, v.y - 1.28f - leg, .46f, .86f)
+            shapes.color = team.cpy().lerp(bodyDark, .32f)
+            shapes.rect(v.x - .68f, v.y - .63f, 1.36f, .54f)
+            // Broad shoulder pads and contrasting jersey stripe.
+            shapes.color = bodyDark
+            shapes.rect(v.x - 1.08f, v.y - .19f, 2.16f, 1.05f)
             shapes.color = team
-            shapes.rect(v.x - .72f, v.y - .3f, 1.44f, 1.3f)
-            shapes.rect(v.x - 1.05f, v.y - .1f, .35f, .9f)
-            shapes.rect(v.x + .7f, v.y - .1f, .35f, .9f)
-            shapes.color = white; shapes.circle(v.x, v.y + 1f, .68f, 16)
-            shapes.color = team; shapes.rect(v.x - .6f, v.y + 1.1f, 1.2f, .23f)
-            if (i == carrier(p) && playType(p) !in setOf("INCOMPLETE", "PICK", "FIELD_GOAL", "PUNT")) {
-                shapes.color = gold; shapes.circle(v.x, v.y - 1.8f, .35f, 14)
-            }
+            shapes.rect(v.x - .92f, v.y - .13f, 1.84f, .98f)
+            shapes.color = white.cpy().lerp(team, .35f)
+            shapes.rect(v.x - .78f, v.y + .49f, 1.56f, .16f)
+            // Swinging arms with glove tips.
+            shapes.color = team.cpy().lerp(white, .23f)
+            shapes.rect(v.x - 1.17f, v.y - .17f + arm, .30f, .78f)
+            shapes.rect(v.x + .87f, v.y - .17f - arm, .30f, .78f)
+            shapes.color = bodyDark
+            shapes.circle(v.x - 1.02f, v.y - .20f + arm, .18f, 10)
+            shapes.circle(v.x + 1.02f, v.y - .20f - arm, .18f, 10)
+            // Oversized helmet silhouette with crown stripe and front face mask.
+            shapes.color = bodyDark
+            shapes.circle(v.x, v.y + 1.02f, .83f, 20)
+            shapes.color = helmet
+            shapes.circle(v.x, v.y + 1.06f, .70f, 20)
+            shapes.color = team
+            shapes.rect(v.x - .16f, v.y + .98f, .32f, .71f)
+            shapes.color = bodyDark
+            shapes.rect(v.x + d * .38f - .10f, v.y + .70f, .20f, .67f)
+            shapes.color = white
+            shapes.rect(v.x + d * .50f - .09f, v.y + .81f, .18f, .43f)
         }
         val b = ball(p, phase)
-        shapes.color = gold; shapes.ellipse(b.x - .5f, b.y - .24f, 1f, .48f)
+        shapes.color = Color(.27f, .12f, .055f, 1f)
+        shapes.ellipse(b.x - .58f, b.y - .30f, 1.16f, .60f)
+        shapes.color = Color(.62f, .32f, .14f, 1f)
+        shapes.ellipse(b.x - .48f, b.y - .24f, .96f, .48f)
+        shapes.color = white
+        shapes.rect(b.x - .14f, b.y - .045f, .28f, .09f)
         // A bright ring identifies the actual carrier only after possession is established.
         val kind = playType(p)
         val activeCarrier = when {
