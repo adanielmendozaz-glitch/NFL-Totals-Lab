@@ -77,8 +77,27 @@ internal object SimcastV3Engine {
         for(i in candidates.indices){sum+=weights[i];if(target<=sum)return candidates[i]}
         return candidates.last()
     }
+    private fun pickUsage(r:Random,athletes:List<V3Athlete>,positions:Set<String>,fallback:String,
+                          team:String,usage:Map<String,Map<String,PlayerUsage2026>>):V3Athlete {
+        if(positions==setOf("QB"))return pick(r,athletes,positions,fallback)
+        val available=athletes.filter{!it.unavailable && it.name.isNotBlank() &&
+            (it.position.uppercase() in positions || (it.position.uppercase() in setOf("PR","KR","FB") &&
+                ("WR" in positions || "RB" in positions)))}.distinctBy{it.name.trim().lowercase()}
+        val history=usage[team].orEmpty()
+        val withStats=available.mapNotNull{a->history[a.name.trim().lowercase()]?.let{a to it}}
+        if(withStats.isEmpty())return pick(r,athletes,positions,fallback)
+        val eligible=if(positions==setOf("RB","QB"))withStats.filter{it.first.position.uppercase() in setOf("RB","FB","QB","KR")}
+                     else withStats
+        if(eligible.isEmpty())return pick(r,athletes,positions,fallback)
+        // 2026 opportunities per game; no fabricated per-player totals. Small 0.15 floor only for roster rotation.
+        val weights=eligible.map{(_,u)->((if(positions==setOf("RB","QB"))u.carries else u.targets).toDouble()/u.games.coerceAtLeast(1)+0.15).coerceAtLeast(0.15)}
+        val draw=r.nextDouble()*weights.sum();var running=0.0
+        for(i in eligible.indices){running+=weights[i];if(draw<=running)return eligible[i].first}
+        return eligible.last().first
+    }
     fun simulate(awayCode:String,homeCode:String,seed:Int,metrics:Map<String,TeamMetrics>,
-                 features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>,profiles:Map<String,V43DriveProfile> = emptyMap()):List<V3Play>{
+                 features:List<MatchupFeature>,rosters:Map<String,List<V3Athlete>>,profiles:Map<String,V43DriveProfile> = emptyMap(),
+                 usage:Map<String,Map<String,PlayerUsage2026>> = emptyMap()):List<V3Play>{
         val rng=Random(seed);val plays=ArrayList<V3Play>();var elapsed=0;var away=true
         var awayScore=0;var homeScore=0;var field=25;var down=1;var distance=10
         var drivePlayCount=0
@@ -149,8 +168,8 @@ internal object SimcastV3Engine {
                     continue
                 }
             }
-            val rusher=if(!pass)pick(rng,roster,setOf("RB","QB"),"$team RB") else null
-            val target=if(pass)pick(rng,roster,setOf("WR","TE","RB"),"$team WR") else null
+            val rusher=if(!pass)pickUsage(rng,roster,setOf("RB","QB"),"$team RB",team,usage) else null
+            val target=if(pass)pickUsage(rng,roster,setOf("WR","TE","RB"),"$team WR",team,usage) else null
             val roll=rng.nextDouble();var yards=0;var kind="";var points=0;var switch=false
             if(pass){
                 when {
@@ -209,10 +228,11 @@ internal object SimcastV3Engine {
     }
     fun props(away:String,home:String,seed:Int,metrics:Map<String,TeamMetrics>,features:List<MatchupFeature>,
               rosters:Map<String,List<V3Athlete>>,iterations:Int=400,
-              profiles:Map<String,V43DriveProfile> = emptyMap()):List<V3Prop>{
+              profiles:Map<String,V43DriveProfile> = emptyMap(),
+              usage:Map<String,Map<String,PlayerUsage2026>> = emptyMap()):List<V3Prop>{
         val values=linkedMapOf<Triple<String,String,String>,IntArray>()
         for(i in 0 until iterations){
-            val game=simulate(away,home,seed+i*7919,metrics,features,rosters,profiles)
+            val game=simulate(away,home,seed+i*7919,metrics,features,rosters,profiles,usage)
             val totals=linkedMapOf<Triple<String,String,String>,Int>()
             for(p in game){
                 val team=if(p.away)away else home
