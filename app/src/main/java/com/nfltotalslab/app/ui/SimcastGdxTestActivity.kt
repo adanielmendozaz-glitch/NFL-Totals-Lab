@@ -77,11 +77,13 @@ class SimcastGdxTestActivity : AndroidApplication() {
                 // V4.4 DRIVE ENGINE: audit the actual profiles used.
                 .put("nflverse_profile",JSONObject(intent.getStringExtra("simcastNflverse") ?: "{}"))
                 .put("usage_audit",SimcastUsageAudit.build(simcastStats.report(org.json.JSONArray(simcastRaw).length()).getJSONArray("events")))
-                .put("usage_model_status","PENDING_2026_PLAYER_STATS")
+                .put("usage_2026",JSONObject(intent.getStringExtra("simcastUsage2026") ?: "{}"))
+                .put("historical_player_usage_loaded",JSONObject(intent.getStringExtra("simcastUsage2026") ?: "{}").optBoolean("historical_player_usage_loaded",false))
+                .put("usage_model_status",JSONObject(intent.getStringExtra("simcastUsage2026") ?: "{}").optString("usage_model_status","MISSING_USAGE_2026"))
                 .put("drive_count_model","EXPERIMENTAL_NEGATIVE_BINOMIAL_GAMMA_POISSON")
                 .put("drive_dispersion_k",7.0)
                 .put("usage_engine_calibrated",false)
-                .put("engine_version","V5-phase2-usage-audit-experimental")
+                .put("engine_version","V5-phase2b-real-2026-usage-audited")
                 .put("export_schema", "simcast-json-v2")
                 .toString(2)
         } catch (e: Exception) {

@@ -239,11 +239,16 @@ internal object SimcastV3Engine {
                 if(p.passer.isNotBlank() && p.kind=="Pase completo"){
                     val k=Triple(team,p.passer,"PASS_YDS");totals[k]=(totals[k]?:0)+p.yards
                 }
+                if(p.receiver.isNotBlank() && (p.kind=="Pase completo" || p.kind=="Pase incompleto" || p.kind=="Intercepcion")){
+                    val k=Triple(team,p.receiver,"TARGETS");totals[k]=(totals[k]?:0)+1
+                }
                 if(p.receiver.isNotBlank() && p.kind=="Pase completo"){
                     val k=Triple(team,p.receiver,"REC_YDS");totals[k]=(totals[k]?:0)+p.yards
+                    val rec=Triple(team,p.receiver,"RECEPTIONS");totals[rec]=(totals[rec]?:0)+1
                 }
                 if(p.rusher.isNotBlank() && p.kind.contains("Carrera")){
                     val k=Triple(team,p.rusher,"RUSH_YDS");totals[k]=(totals[k]?:0)+p.yards
+                    val att=Triple(team,p.rusher,"RUSH_ATTEMPTS");totals[att]=(totals[att]?:0)+1
                 }
             }
             for((k,v) in totals)values.getOrPut(k){IntArray(iterations)}[i]=v

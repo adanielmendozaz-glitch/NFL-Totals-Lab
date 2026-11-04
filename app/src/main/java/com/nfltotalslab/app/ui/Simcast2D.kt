@@ -57,8 +57,16 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
         Text("SIMCAST NO DISPONIBLE: faltan perfiles nflverse para esta semana.")
         return
     }
-    val plays=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles){createPlays(game,prediction,metrics,features,rosterMap,nflverseProfiles,usage2026)}
-    val props=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles){SimcastV3Engine.props(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":props").hashCode(),metrics,features,rosterMap,profiles=nflverseProfiles,usage=usage2026)}
+    val usageCoverage = listOf(game.awayTeam,game.homeTeam).associateWith { code ->
+        rosterMap[code].orEmpty().count { athlete -> !athlete.unavailable &&
+            usage2026[code]?.containsKey(athlete.name.trim().lowercase()) == true }
+    }
+    if (usageCoverage.values.any { it == 0 }) {
+        Text("SIMCAST BLOQUEADO: no hay jugadores activos coincidentes con estadísticas NFL 2026. Revisar roster, nombres y semana.")
+        return
+    }
+    val plays=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles,usage2026){createPlays(game,prediction,metrics,features,rosterMap,nflverseProfiles,usage2026)}
+    val props=remember(game.gameId,prediction.id,metrics,features,rosterMap,nflverseProfiles,usage2026){SimcastV3Engine.props(game.awayTeam,game.homeTeam,(game.gameId+":"+prediction.id+":props").hashCode(),metrics,features,rosterMap,profiles=nflverseProfiles,usage=usage2026)}
     var showProps by remember { mutableStateOf(false) }
     var index by remember(game.gameId,prediction.id){mutableIntStateOf(0)}
     var playing by remember(game.gameId,prediction.id){mutableStateOf(false)}
@@ -201,6 +209,18 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                             .put("drives_per_game",v.drivesPerGame).put("plays_per_drive",v.playsPerDrive)
                             .put("seconds_per_drive",v.secondsPerDrive).put("seconds_per_play",v.secondsPerPlay)
                             .put("pass_rate",v.passRate))
+                    }
+                }.toString())
+                putExtra("simcastUsage2026",org.json.JSONObject().apply {
+                    put("source","nflverse stats_player_week_2026.csv")
+                    put("season",game.season);put("week",game.week)
+                    put("historical_player_usage_loaded",true)
+                    put("usage_engine_calibrated",false)
+                    put("usage_model_status","HISTORICAL_USAGE_LOADED_NOT_BACKTEST_CALIBRATED")
+                    for(code in listOf(game.awayTeam,game.homeTeam)) {
+                        put(code,org.json.JSONObject()
+                            .put("matched_active_players",usageCoverage[code] ?: 0)
+                            .put("historical_players",usage2026[code]?.size ?: 0))
                     }
                 }.toString())
                 putExtra("simcastProps",org.json.JSONArray().apply{props.forEach{v->put(org.json.JSONObject().apply{
