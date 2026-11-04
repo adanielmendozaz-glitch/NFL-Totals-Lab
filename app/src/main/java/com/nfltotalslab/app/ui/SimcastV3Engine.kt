@@ -20,6 +20,35 @@ private fun Random.nextGaussianCompat():Double {
     val u1=nextDouble().coerceAtLeast(1e-12)
     return sqrt(-2.0*ln(u1))*cos(2.0*Math.PI*nextDouble())
 }
+
+/** Gamma-Poisson mixture (negative binomial) for overdispersed drive opportunity budgets.
+ * This is a prior, NOT calibrated 2026 player usage. */
+private fun Random.gammaShape(shape:Double):Double {
+    require(shape>0.0)
+    if(shape<1.0) return gammaShape(shape+1.0)*nextDouble().coerceAtLeast(1e-12).pow(1.0/shape)
+    val d=shape-1.0/3.0
+    val c=1.0/sqrt(9.0*d)
+    while(true) {
+        val z=nextGaussianCompat()
+        val v0=1.0+c*z
+        if(v0<=0.0) continue
+        val v=v0*v0*v0
+        val u=nextDouble()
+        if(u<1.0-0.0331*z*z*z*z || ln(u)<0.5*z*z+d*(1.0-v+ln(v))) return d*v
+    }
+}
+private fun Random.poissonDraw(lambda:Double):Int {
+    val lam=lambda.coerceIn(0.01,35.0)
+    var product=1.0;var k=0
+    val threshold=exp(-lam)
+    do { k++;product*=nextDouble().coerceAtLeast(1e-12) } while(product>threshold && k<200)
+    return k-1
+}
+private fun Random.negativeBinomialDraw(mean:Double,dispersion:Double):Int {
+    val k=dispersion.coerceAtLeast(0.1)
+    return poissonDraw(gammaShape(k)*mean.coerceAtLeast(0.01)/k)
+}
+
 internal object SimcastV3Engine {
     private fun pick(r:Random, athletes:List<V3Athlete>, positions:Set<String>,fallback:String):V3Athlete {
         // V4: use a plausible rotation, not the entire historical roster.
@@ -54,6 +83,7 @@ internal object SimcastV3Engine {
         var awayScore=0;var homeScore=0;var field=25;var down=1;var distance=10
         var drivePlayCount=0
         var driveClock=0
+        var driveOpportunityBudget=0
         // V4.5: nflverse drives calibrate clock/tempo, never force illegal punts.
         val featureMap=features.groupBy { it.team }
         fun rate(team:String,key:String):Double? = featureMap[team]?.firstOrNull{it.feature==key && it.sampleN>=20}?.value
@@ -80,6 +110,12 @@ internal object SimcastV3Engine {
             val turnoverRisk=if(off!=null)
                 (.022+(off.turnoverRate-.025)*(off.games.toDouble()/(off.games+8.0))).coerceIn(.008,.05)
                 else .022
+            // Negative-binomial drive budget: diagnostic prior for opportunities, not a hard stop.
+            // A drive can exceed this budget when first downs are earned.
+            if(drivePlayCount==0) {
+                val expected=(profiles[team]?.playsPerDrive ?: 6.0).coerceIn(3.0,11.0)
+                driveOpportunityBudget=rng.negativeBinomialDraw(expected,7.0).coerceIn(2,18)
+            }
             val roster=rosters[team].orEmpty();val qb=pick(rng,roster,setOf("QB"),"$team QB")
             val profile=profiles[team]
             val historicalPass=profile?.passRate?.coerceIn(.25,.82)
@@ -146,7 +182,7 @@ internal object SimcastV3Engine {
             // nflverse: drive duration, plays/drive, seconds/play and pass share affect actual simulation.
             val baseSeconds=(profile?.secondsPerPlay ?: 31.0).coerceIn(18.0,45.0)
             val driveBudget=(profile?.secondsPerDrive ?: 175.0).coerceIn(75.0,350.0)
-            val targetPlays=(profile?.playsPerDrive ?: 6.0).coerceIn(3.0,11.0)
+            val targetPlays=(0.7*(profile?.playsPerDrive ?: 6.0)+0.3*driveOpportunityBudget.coerceAtLeast(2)).coerceIn(3.0,11.0)
             val expectedRemaining=(driveBudget-driveClock).coerceAtLeast(5.0)
             val budgetPerPlay=(expectedRemaining/(targetPlays-drivePlayCount).coerceAtLeast(1.0)).coerceIn(8.0,45.0)
             val nominal=(baseSeconds*.65+budgetPerPlay*.35)
