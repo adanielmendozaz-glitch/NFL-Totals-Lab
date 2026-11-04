@@ -89,6 +89,9 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val qbName=playerName(roster,p.away,"QB",0)
     val rbName=playerName(roster,p.away,"RB",0)
     val actor=if(p.passer.isNotBlank())p.passer else p.rusher.ifBlank{rbName}
+    // V5_VISUAL_UNIFORMS_HELMETS: colores del equipo que ataca y defiende.
+    val attackColor=Color(teamBrand(offenseTeam).primary.toArgb())
+    val defendColor=Color(teamBrand(defenseTeam).primary.toArgb())
     val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         Text("NFL SIMCAST V5 · PLAYER USAGE 2026",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
@@ -112,6 +115,12 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
             val left=w*.075f;val usable=w*.85f
             fun x(yard:Float)=left+usable*(yard+10f)/120f
             drawRect(Color(0xFF155D3B))
+            // Bandas de césped alternadas y zonas de anotación.
+            for (band in 0 until 10) if (band%2==0) {
+                val bx=x((band*10).toFloat())
+                drawRect(Color(0xFF2A7548).copy(alpha=.20f),
+                    topLeft=Offset(bx,0f),size=androidx.compose.ui.geometry.Size(x((band+1)*10f)-bx,h))
+            }
             drawRect(Color(0xFF193D67),topLeft=Offset(0f,0f),size=androidx.compose.ui.geometry.Size(x(0f),h))
             drawRect(Color(0xFF244D75),topLeft=Offset(x(100f),0f),size=androidx.compose.ui.geometry.Size(w-x(100f),h))
             for(yard in 0..100 step 5){
@@ -132,6 +141,12 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
             val first=(los+dir*p.distance).coerceIn(0f,100f)
             drawLine(Color(0xFF54C5FF),Offset(x(los),0f),Offset(x(los),h),2.dp.toPx())
             drawLine(Color(0xFFFFD166),Offset(x(first),0f),Offset(x(first),h),2.dp.toPx())
+            // Marca translúcida de la zona de avance de la jugada.
+            val visualEnd=if(p.away)p.finish.toFloat() else 100f-p.finish
+            val zoneStart=min(x(los),x(visualEnd))
+            drawRect(Color(0xFFFFD166).copy(alpha=.12f),
+                topLeft=Offset(zoneStart,h*.40f),
+                size=androidx.compose.ui.geometry.Size(abs(x(visualEnd)-x(los)),h*.20f))
             val roles=offenseRoles+defenseRoles
             val counts=mutableMapOf<String,Int>()
             val labels=ArrayList<Pair<Offset,String>>()
@@ -151,12 +166,30 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                     n in 2..6 -> dir*progress*1.5f
                     else -> dir*progress*(if(p.kind.contains("Pase")||p.kind=="Touchdown")min(22f,abs(p.yards).toFloat()+7f) else 4f)
                 }
-                val drift=if(n==7||n==8)(if(n==7)1f else -1f)*progress*h*.06f else 0f
+                val routeDrift=if(n==7||n==8)(if(n==7)1f else -1f)*progress*h*.12f else 0f
+                val runDrift=if(offense && n==1 && p.kind.contains("Carrera"))
+                    kotlin.math.sin(progress*Math.PI).toFloat()*h*.035f else 0f
+                val drift=routeDrift+runDrift
                 val px=(startX+move*usable/120f).coerceIn(7f,w-7f)
                 val py=(startY+drift).coerceIn(7f,h-7f)
                 val center=Offset(px,py)
-                drawCircle(if(offense)Color(0xFFF0F4F8) else Color(0xFF2787F0),5.dp.toPx(),center)
-                drawCircle(Color(0xFF092338),5.dp.toPx(),center,style=Stroke(.8.dp.toPx()))
+                // Uniforme: hombros/cuerpo y casco con iluminación. No son sprites oficiales.
+                val uniform=if(offense)attackColor else defendColor
+                val border=Color(0xFF061727)
+                val bodyRadius=5.7.dp.toPx()
+                val helmetRadius=3.9.dp.toPx()
+                drawCircle(Color.Black.copy(alpha=.24f),bodyRadius+1.dp.toPx(),Offset(px+1.5f,py+2f))
+                drawCircle(uniform,bodyRadius,center)
+                drawCircle(Color.White.copy(alpha=.88f),bodyRadius,center,style=Stroke(1.dp.toPx()))
+                val helmetCenter=Offset(px+dir*(if(offense)1f else -1f)*3.dp.toPx(),py-1.5.dp.toPx())
+                drawCircle(uniform.copy(alpha=.95f),helmetRadius,helmetCenter)
+                drawCircle(Color.White.copy(alpha=.94f),helmetRadius,helmetCenter,style=Stroke(.85.dp.toPx()))
+                drawLine(Color.White.copy(alpha=.85f),
+                    Offset(helmetCenter.x-helmetRadius*.42f,helmetCenter.y-helmetRadius*.4f),
+                    Offset(helmetCenter.x+helmetRadius*.4f,helmetCenter.y+helmetRadius*.2f),.8.dp.toPx())
+                // Barra facial y visor para diferenciar el casco del uniforme.
+                drawLine(border,Offset(helmetCenter.x-helmetRadius*.6f,helmetCenter.y+helmetRadius*.55f),
+                    Offset(helmetCenter.x+helmetRadius*.65f,helmetCenter.y+helmetRadius*.55f),.9.dp.toPx())
                 if(showNames && (n==0||n==1||n==7||n==8)){
                     val key="${offense}_$role";val ordinal=counts[key]?:0;counts[key]=ordinal+1
                     val name=playerName(roster,if(offense)p.away else !p.away,role,ordinal)
@@ -181,13 +214,19 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 val trailX=x(los+(ballEnd-los)*(progress-.09f).coerceAtLeast(0f))
                 drawLine(ballColor.copy(alpha=.40f),Offset(trailX,ballY),Offset(ballX,ballY),3.dp.toPx())
             }
-            drawCircle(ballColor,5.dp.toPx(),Offset(ballX,ballY))
+            // Balón ovalado y costura, visible incluso con jugadores cercanos.
+            val ballCenter=Offset(ballX,ballY)
+            drawOval(ballColor,topLeft=Offset(ballCenter.x-6.dp.toPx(),ballCenter.y-3.dp.toPx()),
+                size=androidx.compose.ui.geometry.Size(12.dp.toPx(),6.dp.toPx()))
+            drawLine(Color.White,Offset(ballX-2.dp.toPx(),ballY),Offset(ballX+2.dp.toPx(),ballY),.9.dp.toPx())
             val paint=android.graphics.Paint().apply{color=android.graphics.Color.WHITE;textSize=9.dp.toPx();isAntiAlias=true;textAlign=android.graphics.Paint.Align.CENTER;setShadowLayer(3f,1f,1f,android.graphics.Color.BLACK)}
             for((point,label) in labels){drawContext.canvas.nativeCanvas.drawText(label,point.x,(point.y-8.dp.toPx()).coerceAtLeast(10.dp.toPx()),paint)}
             drawContext.canvas.nativeCanvas.drawText(game.awayTeam,x(-5f),h*.90f,paint)
             drawContext.canvas.nativeCanvas.drawText(game.homeTeam,x(105f),h*.90f,paint)
         }
         Text("Jugada ${index+1}/${plays.size} · ${p.kind} · ${p.yards} yd${if(p.points>0)" · +${p.points} pts" else ""}",color=Color.White)
+        Text("● ${offenseTeam} ataque   ● ${defenseTeam} defensa · uniformes y cascos 2D ilustrativos",
+            color=Color(0xFFB7C5D6),style=MaterialTheme.typography.labelSmall)
         Text("Acción: ${actor}${if(p.receiver.isNotBlank())" → ${p.receiver}" else ""}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
             OutlinedButton(onClick={index=0;playing=false},contentPadding=PaddingValues(horizontal=7.dp)){Text("Inicio")}
