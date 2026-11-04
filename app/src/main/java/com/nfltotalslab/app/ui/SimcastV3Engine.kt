@@ -139,7 +139,7 @@ internal object SimcastV3Engine {
             val profile=profiles[team]
             val historicalPass=profile?.passRate?.coerceIn(.25,.82)
             val rushShare=(if(historicalPass!=null)1.0-historicalPass else (rate(team,"rush_rate")?:.43)).coerceIn(.18,.75)
-            val pass=rng.nextDouble()<(if(down>=3) (1.0-rushShare+.15) else 1.0-rushShare).coerceIn(.25,.9)
+            val pass=rng.nextDouble()<(if(down>=3) (1.0-rushShare+.10) else 1.0-rushShare).coerceIn(.25,.82)
             val beforeField=field;val beforeDown=down;val beforeDistance=distance
             // V4.1: decide special teams before generating an offensive play.
             if(down==4){
@@ -175,14 +175,14 @@ internal object SimcastV3Engine {
                 when {
                     roll<(turnoverRisk-edge*.008).coerceIn(.008,.045)->{kind="Intercepcion";switch=true}
                     roll<(.095-edge*.025).coerceIn(.05,.16)->{kind="Sack";yards=-rng.nextInt(2,11)}
-                    roll<(.40-edge*.13).coerceIn(.25,.55)->kind="Pase incompleto"
-                    else->{kind="Pase completo";yards=((rng.nextDouble().pow(1.85)*30+1)*(1+edge*.45)).roundToInt().coerceAtLeast(1)}
+                    roll<(.38-edge*.13).coerceIn(.25,.52)->kind="Pase incompleto"
+                    else->{kind="Pase completo";yards=((rng.nextDouble().pow(1.35)*30+1)*(1+edge*.45)).roundToInt().coerceAtLeast(1)}
                 }
             } else {
                 when {
                     roll<(turnoverRisk*.55).coerceIn(.005,.027)->{kind="Fumble";switch=true}
                     roll<(.19-edge*.07).coerceIn(.09,.28)->{kind="Carrera detenida";yards=-rng.nextInt(0,4)}
-                    else->{kind="Carrera";yards=((rng.nextDouble().pow(1.85)*13+1)*(1+edge*.35)).roundToInt().coerceAtLeast(1)}
+                    else->{kind="Carrera";yards=((rng.nextDouble().pow(1.55)*13+1)*(1+edge*.35)).roundToInt().coerceAtLeast(1)}
                 }
             }
             // Keep the original play type on scores so individual passing/rushing yards are conserved.

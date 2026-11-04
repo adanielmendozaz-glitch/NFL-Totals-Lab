@@ -88,7 +88,7 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
     val receiverName=playerName(roster,p.away,"WR",0)
     val qbName=playerName(roster,p.away,"QB",0)
     val rbName=playerName(roster,p.away,"RB",0)
-    val actor=if(p.kind.contains("Pase")||p.kind=="Sack"||p.kind=="Intercepcion")qbName else rbName
+    val actor=if(p.passer.isNotBlank())p.passer else p.rusher.ifBlank{rbName}
     val testContext = LocalContext.current
     Column(verticalArrangement=Arrangement.spacedBy(8.dp)){
         Text("NFL SIMCAST V5 · PLAYER USAGE 2026",color=Color(0xFFFFC861),style=MaterialTheme.typography.labelMedium)
@@ -164,15 +164,31 @@ fun Simcast2D(game:GameRecord,prediction:Prediction,roster:GameRosterIntelligenc
                 }
             }
             val end=if(p.away)p.finish.toFloat() else 100f-p.finish
-            val ballX=x(los+(end-los)*motion.value)
-            drawCircle(Color(0xFFFFBF57),5.dp.toPx(),Offset(ballX,h*.5f))
+            val progress=motion.value.coerceIn(0f,1f)
+            val isPass=p.kind=="Pase completo" || p.kind=="Pase incompleto" || p.kind=="Intercepcion"
+            val isSack=p.kind=="Sack"
+            val ballEnd=if(p.kind=="Pase incompleto" || p.kind=="Intercepcion")
+                (los+dir*min(16f,p.distance.toFloat()+5f)).coerceIn(0f,100f) else end
+            val ballX=x(los+(ballEnd-los)*progress)
+            val arc=if(isPass) kotlin.math.sin(progress*Math.PI).toFloat()*h*.20f else 0f
+            val ballY=h*.5f-arc
+            val ballColor=when {
+                p.kind=="Intercepcion" -> Color(0xFFFF7272)
+                isSack -> Color(0xFFFFB86B)
+                else -> Color(0xFFFFBF57)
+            }
+            if(progress>0f){
+                val trailX=x(los+(ballEnd-los)*(progress-.09f).coerceAtLeast(0f))
+                drawLine(ballColor.copy(alpha=.40f),Offset(trailX,ballY),Offset(ballX,ballY),3.dp.toPx())
+            }
+            drawCircle(ballColor,5.dp.toPx(),Offset(ballX,ballY))
             val paint=android.graphics.Paint().apply{color=android.graphics.Color.WHITE;textSize=9.dp.toPx();isAntiAlias=true;textAlign=android.graphics.Paint.Align.CENTER;setShadowLayer(3f,1f,1f,android.graphics.Color.BLACK)}
             for((point,label) in labels){drawContext.canvas.nativeCanvas.drawText(label,point.x,(point.y-8.dp.toPx()).coerceAtLeast(10.dp.toPx()),paint)}
             drawContext.canvas.nativeCanvas.drawText(game.awayTeam,x(-5f),h*.90f,paint)
             drawContext.canvas.nativeCanvas.drawText(game.homeTeam,x(105f),h*.90f,paint)
         }
         Text("Jugada ${index+1}/${plays.size} · ${p.kind} · ${p.yards} yd${if(p.points>0)" · +${p.points} pts" else ""}",color=Color.White)
-        Text("Jugadores simulados: ${p.passer.ifBlank{p.rusher}}${if(p.receiver.isNotBlank())" → ${p.receiver}" else ""}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
+        Text("Acción: ${actor}${if(p.receiver.isNotBlank())" → ${p.receiver}" else ""}",color=Color(0xFFB7C5D6),style=MaterialTheme.typography.bodySmall)
         Row(horizontalArrangement=Arrangement.spacedBy(4.dp)){
             OutlinedButton(onClick={index=0;playing=false},contentPadding=PaddingValues(horizontal=7.dp)){Text("Inicio")}
             Button(onClick={if(index==plays.lastIndex)index=0;playing=!playing},contentPadding=PaddingValues(horizontal=7.dp)){Text(if(playing)"Pausa" else "Play")}
