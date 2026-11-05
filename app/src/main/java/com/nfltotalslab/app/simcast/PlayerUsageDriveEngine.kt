@@ -73,7 +73,8 @@ data class GameSim(
     val plays:List<SimPlay>, val players:List<SimPlayerStats>,
     val usageInputs:List<UsagePlayer>,
     val awayQuarters:List<Int>, val homeQuarters:List<Int>,
-    val lineup:GameLineup=GameLineup()
+    val lineup:GameLineup=GameLineup(),
+    val calibration:SimcastCalibration=SimcastCalibration()
 ){
     val awayFinal:Int get()=awayQuarters.sum()
     val homeFinal:Int get()=homeQuarters.sum()
@@ -87,7 +88,8 @@ class PlayerUsageDriveEngine {
     fun simulate(
         game:GameRecord, awayUsage:TeamUsage, homeUsage:TeamUsage,
         awayMetrics:TeamMetrics?, homeMetrics:TeamMetrics?, seed:Int,
-        lineup:GameLineup=GameLineup()
+        lineup:GameLineup=GameLineup(),
+        calibration:SimcastCalibration=SimcastCalibration()
     ):GameSim {
         val rng=Random(seed)
         val plays=mutableListOf<SimPlay>()
@@ -162,8 +164,9 @@ class PlayerUsageDriveEngine {
             var dist=10
             val m=teamMetrics[offense]
             val opp=teamMetrics[opponent(offense)]
-            val adjustment=((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0))
-                .coerceIn(-0.3,0.3)
+            val scoringFactor=calibration.factor(offense,game)
+            val adjustment=(((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0))
+                + (scoringFactor-1.0)*.40).coerceIn(-0.3,0.3)
             val passRate=passShare(offense)
             var ended=false
             while(!ended && remaining>0 && plays.size<240 && drivePlays<16){
@@ -195,7 +198,7 @@ class PlayerUsageDriveEngine {
                         type="PUNT"
                         description="Despeje en cuarto down"
                     }
-                    remaining-=8
+                    remaining-= (8*calibration.clockFactor).toInt().coerceAtLeast(4)
                     ended=true
                 }else if(rng.nextDouble()<passRate){
                     val target=player(offense,"TARGET")
@@ -259,7 +262,10 @@ class PlayerUsageDriveEngine {
                     if(rng.nextDouble()<.008){type="FUMBLE";turnover=true;description="Balón perdido por ${runner.name}"}
                     remaining-=24+rng.nextInt(18)
                 }
-                remaining=max(0,remaining)
+                // Drive pace is calibrated from eligible prior-week drive observations.
+                // Earlier play-time decrement already applied, adjust the actual elapsed time.
+                val spent=before-remaining
+                remaining=max(0,before-(spent*calibration.clockFactor).toInt().coerceAtLeast(1))
                 yard=(yard+gained).coerceIn(1,105)
                 if(!ended && !turnover && yard>=100){
                     pts=if(rng.nextDouble()<.94)7 else 6
@@ -296,6 +302,6 @@ class PlayerUsageDriveEngine {
                 val inputs=usage.getValue(team).players
                 val starter=starters.getValue(team)
                 if(inputs.any{it.id==starter.id})inputs else inputs+starter
-            },awayQ.toList(),homeQ.toList(),lineup)
+            },awayQ.toList(),homeQ.toList(),lineup,calibration)
     }
 }

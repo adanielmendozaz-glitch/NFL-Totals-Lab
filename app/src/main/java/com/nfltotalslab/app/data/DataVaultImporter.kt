@@ -186,6 +186,22 @@ object DataVaultImporter {
                     put("created_at",System.currentTimeMillis());put("payload",j.toString())
                 })
             }
+            // V1.5 aggregate audit records, separate from individual Simcast replays.
+            // Preserve immutable pregame flag and reject malformed entries.
+            each(root,"simcast_batches"){j->
+                val id=j.optString("batchKey","")
+                val gameId=j.optString("gameId","")
+                val n=j.optInt("n",0)
+                if(id.isNotBlank() && gameId.isNotBlank() && n in setOf(100,500,1000)) {
+                    insert("simcast_batches",ContentValues().apply {
+                        put("batch_key",id);put("game_id",gameId)
+                        put("season",j.optInt("season",season));put("week",j.optInt("week",0))
+                        put("created_at",j.optLong("createdAt",0L))
+                        put("pregame",if(j.optBoolean("pregame",false))1 else 0)
+                        put("payload",j.toString())
+                    })
+                }
+            }
             w.setTransactionSuccessful()
         }finally{
             w.endTransaction()

@@ -12,6 +12,10 @@ import com.nfltotalslab.app.model.LegacyTotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
 import com.nfltotalslab.app.simcast.*
+import java.security.MessageDigest
+import org.json.JSONObject
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -178,9 +182,79 @@ class NflRepository(
         val a=dataCenter.usageFor(game,game.awayTeam)
         val h=dataCenter.usageFor(game,game.homeTeam)
         val m=db.loadMetrics(game.season).associateBy{it.team}
-        val run=PlayerUsageDriveEngine().simulate(game,a,h,m[game.awayTeam],m[game.homeTeam],seed,lineup)
+        val calibration=PregameSimcastCalibration.build(game,db.loadGames(game.season),m[game.awayTeam],m[game.homeTeam])
+        val run=PlayerUsageDriveEngine().simulate(game,a,h,m[game.awayTeam],m[game.homeTeam],seed,lineup,calibration)
         withContext(Dispatchers.IO){db.saveSimcastReport(game,seed,SimcastArchive.toJson(run).toString())}
         run
+    }
+
+    /** Experimental batches never change the official Core pick or calibrated probabilities. */
+    suspend fun simulateBatch(
+        game:GameRecord, seed:Int, lineup:GameLineup, count:Int, onProgress:(Int)->Unit
+    ):BatchReport = withContext(Dispatchers.Default) {
+        val a=dataCenter.usageFor(game,game.awayTeam)
+        val h=dataCenter.usageFor(game,game.homeTeam)
+        val m=db.loadMetrics(game.season).associateBy{it.team}
+        val c=PregameSimcastCalibration.build(game,db.loadGames(game.season),m[game.awayTeam],m[game.homeTeam])
+        val pregame=!game.finished && !KickoffGuard.isLocked(game)
+        val signatureText=buildString {
+            append("V15|${game.season}|${game.week}|${game.gameId}|${game.totalLine}|")
+            append("${c.method}|${c.cutoffWeek}|${c.leagueGames}|")
+            listOf(game.awayTeam,game.homeTeam).forEach { team ->
+                val mm=m[team]
+                append("${team}:${mm?.games}:${mm?.offEpaPerPlay}:${mm?.defEpaAllowedPerPlay}|")
+            }
+            dataCenter.all(game.season).sortedBy{it.feed.name}.forEach { f->
+                append("${f.feed.name}:${f.throughWeek}:${f.sha256}|")
+            }
+            append("${lineup.away.startingQb}:${lineup.home.startingQb}|")
+            append(lineup.away.outNames.sorted().joinToString(","))
+            append("|")
+            append(lineup.home.outNames.sorted().joinToString(","))
+        }
+        val signature=MessageDigest.getInstance("SHA-256").digest(signatureText.toByteArray())
+            .joinToString(""){ "%02x".format(it) }
+        val parentJob=currentCoroutineContext()
+        val report=SimcastBatchEngine().run(game,a,h,m[game.awayTeam],m[game.homeTeam],lineup,c,
+            count,seed,pregame,onProgress,shouldContinue={parentJob.isActive},inputSignature=signature)
+        withContext(Dispatchers.IO){
+            val j=SimcastBatchArchive.toJson(report)
+            db.saveSimcastBatch(game,j.getString("batchKey"),pregame,j.toString())
+        }
+        report
+    }
+
+    /** Only saved *pregame* batches for subsequently finalized games are auditable. */
+    fun batchAudit(season:Int):SimcastBatchAudit {
+        val completed=db.loadGames(season).filter{it.finished}.associateBy{it.gameId}
+        val latest=linkedMapOf<String,JSONObject>()
+        val all=db.exportSimcastBatches(season)
+        for(i in 0 until all.length()){
+            val j=all.optJSONObject(i) ?: continue
+            if(!j.optBoolean("pregame",false))continue
+            val id=j.optString("gameId")
+            if(id in completed && id !in latest)latest[id]=j
+        }
+        if(latest.isEmpty())return SimcastBatchAudit()
+        var errorSum=0.0;var brierSum=0.0;var graded=0;var correct=0
+        latest.forEach{ (id,j)->
+            val g=completed.getValue(id)
+            val observed=g.finalTotal ?: return@forEach
+            errorSum+=kotlin.math.abs(j.optDouble("meanTotal",0.0)-observed)
+            if(!j.isNull("line")){
+                val line=j.optDouble("line")
+                if(observed.toDouble()!=line && !j.isNull("pOver")){
+                    val prob=j.optDouble("pOver").coerceIn(0.0,1.0)
+                    val result=if(observed>line)1.0 else 0.0
+                    brierSum+=(prob-result)*(prob-result)
+                    graded++
+                    if((prob>=.5)==(observed>line))correct++
+                }
+            }
+        }
+        return SimcastBatchAudit(latest.size,errorSum/latest.size,
+            if(graded>0)brierSum/graded else null,graded,
+            if(graded>0)correct.toDouble()/graded else null)
     }
 
     fun feeds(season:Int) = dataCenter.all(season)
@@ -232,7 +306,8 @@ class NflRepository(
             lastDeepSync=lastDeepSync(),
             feedBackup=dataCenter.export(season),
             feedHistory=dataCenter.exportHistory(season),
-            simcastReports=db.exportSimcastReports(season)
+            simcastReports=db.exportSimcastReports(season),
+            batchReports=db.exportSimcastBatches(season)
         )
 
     fun previewDataVault(raw:String):VaultImportPreview =

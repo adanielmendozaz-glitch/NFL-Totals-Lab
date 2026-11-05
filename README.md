@@ -1,3 +1,5 @@
+> **Novedad 1.5:** [Simulation Center, auditor, calibración y Data Vault V8](SIMULATION_CENTER_V1_5.md).
+
 > **V1.3 Player Usage Simcast:** Leer [SIMCAST_PLAYER_USAGE_V1_3.md](SIMCAST_PLAYER_USAGE_V1_3.md) para cambios, compatibilidad y limitaciones.
 
 # Actualización 2026-11-05 — Data Center V1.2 / Visual Lab

@@ -23,6 +23,8 @@ import androidx.compose.ui.platform.LocalUriHandler
 import com.nfltotalslab.app.data.GameRecord
 import com.nfltotalslab.app.simcast.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
@@ -40,6 +42,8 @@ private val scAmber=Color(0xffffd36d)
 fun SimcastGameScreen(
     games:List<GameRecord>, initialGame:GameRecord?,
     onSimulate:suspend (GameRecord,Int,GameLineup)->GameSim,
+    onBatch:suspend (GameRecord,Int,GameLineup,Int,(Int)->Unit)->BatchReport,
+    audit:SimcastBatchAudit,
     onBack:()->Unit
 ){
     val scope=rememberCoroutineScope()
@@ -55,6 +59,11 @@ fun SimcastGameScreen(
     var awayOut by remember(selected?.gameId){mutableStateOf(preset.away.outNames.joinToString(", "))}
     var homeOut by remember(selected?.gameId){mutableStateOf(preset.home.outNames.joinToString(", "))}
     val browser=LocalUriHandler.current
+    var batch by remember{mutableStateOf<BatchReport?>(null)}
+    var batchCount by remember{mutableIntStateOf(500)}
+    var batchProgress by remember{mutableIntStateOf(0)}
+    var batchLoading by remember{mutableStateOf(false)}
+    var batchJob by remember{mutableStateOf<Job?>(null)}
     var sim by remember{mutableStateOf<GameSim?>(null)}
     var index by remember{mutableIntStateOf(0)}
     var playing by remember{mutableStateOf(false)}
@@ -76,7 +85,10 @@ fun SimcastGameScreen(
                 .onFailure{exportStatus="Error de exportación: ${it.message}"}
         }
     }
-    LaunchedEffect(selected?.gameId){sim=null;index=0;phase=0f;playing=false;selectedTeam=null;error=null}
+    LaunchedEffect(selected?.gameId){
+        batchJob?.cancel();batchJob=null;batch=null;batchLoading=false;batchProgress=0
+        sim=null;index=0;phase=0f;playing=false;selectedTeam=null;error=null
+    }
     // Animate individual events at ~30 FPS, rather than jumping between static formations.
     LaunchedEffect(sim,playing,speed,index){
         val s=sim
@@ -110,6 +122,27 @@ fun SimcastGameScreen(
                 .onSuccess{sim=it;index=0;phase=0f;selectedTeam=it.away;playing=true}
                 .onFailure{error="Error al simular: ${it.message}"}
             loading=false
+        }
+    }
+    fun runBatch(){
+        val g=selected ?: return
+        if(batchLoading)return
+        val lineup=chosenLineup()
+        val count=batchCount
+        batchProgress=0;batchLoading=true;batch=null;error=null;playing=false
+        val seed=g.gameId.hashCode() xor (seedCounter*104729)
+        seedCounter++
+        batchJob=scope.launch {
+            try {
+                val result=onBatch(g,seed,lineup,count){done->scope.launch{batchProgress=done}}
+                batch=result
+                sim=result.replay
+                index=0;phase=0f;selectedTeam=result.away;playing=false
+            }catch(e:CancellationException){
+                error="Lote cancelado. No se guardó un resultado incompleto."
+            }catch(e:Exception){
+                error="Error del lote: ${e.message}"
+            }finally{batchLoading=false;batchJob=null}
         }
     }
     val play=sim?.plays?.getOrNull(index)
@@ -177,13 +210,112 @@ fun SimcastGameScreen(
         }
         item{
             Button(
-                modifier=Modifier.fillMaxWidth(),enabled=selected!=null&&!loading,
+                modifier=Modifier.fillMaxWidth(),enabled=selected!=null&&!loading&&!batchLoading,
                 onClick={runScenario()},colors=ButtonDefaults.buttonColors(containerColor=scGreen)
             ){Text(if(loading)"GENERANDO PARTIDO…" else if(sim==null)"SIMULAR PARTIDO COMPLETO" else "NUEVA SIMULACIÓN",color=scBg,fontWeight=FontWeight.Bold)}
             error?.let{Text(it,color=scAmber,fontSize=11.sp)}
             Text("Motor experimental: drive + down/distancia + Player Weekly. No modifica el pick del Core.",color=scMuted,fontSize=10.sp)
             if(selected?.finished==true){
                 Text("Partido finalizado: esta corrida NO es un backtest pregame; los datos actuales podrían ser posteriores al partido.",color=scAmber,fontSize=11.sp)
+            }
+        }
+        item {
+            Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
+                    Text("SIMULATION CENTER · V1.5",color=scAmber,fontSize=14.sp,fontWeight=FontWeight.Black)
+                    Text(if(audit.settled==0)"Auditor histórico: aún no hay lotes PRE-GAME con resultado final."
+                         else "AUDITOR REAL · ${audit.settled} juegos · MAE ${"%.1f".format(audit.meanAbsoluteError)} puntos · Brier ${audit.brier?.let{ "%.3f".format(it) } ?: "—"} (${audit.linesGraded} líneas)",
+                         color=scMuted,fontSize=10.sp)
+                    Text("Monte Carlo experimental. Cada corrida calcula drives, puntos y estadísticas individuales; no modifica el Core.",color=scMuted,fontSize=11.sp)
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                        listOf(100,500,1000).forEach { n ->
+                            if(batchCount==n) Button(onClick={batchCount=n},enabled=!batchLoading,modifier=Modifier.weight(1f)) {
+                                Text("%,d".format(n),fontSize=11.sp)
+                            } else OutlinedButton(onClick={batchCount=n},enabled=!batchLoading,modifier=Modifier.weight(1f)) {
+                                Text("%,d".format(n),fontSize=11.sp)
+                            }
+                        }
+                    }
+                    if(batchLoading){
+                        LinearProgressIndicator(progress={batchProgress.toFloat()/batchCount},modifier=Modifier.fillMaxWidth(),color=scGreen)
+                        Text("${batchProgress} de ${batchCount} simulaciones",color=scMuted,fontSize=11.sp)
+                        OutlinedButton(onClick={batchJob?.cancel()},modifier=Modifier.fillMaxWidth()) {
+                            Text("CANCELAR LOTE",color=scAmber)
+                        }
+                    } else Button(enabled=selected!=null && !loading,onClick={runBatch()},modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=scBlue)) {
+                        Text("SIMULAR ${batchCount} PARTIDOS",color=scBg,fontWeight=FontWeight.Bold)
+                    }
+                    Text("Si el juego ya empezó o terminó, el lote se marca NO PREGAME y no sirve para medir precisión predictiva.",color=scMuted,fontSize=10.sp)
+                }
+            }
+        }
+        if(batch!=null){
+            val b=batch!!
+            item {
+                Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text("AUDITOR DE SIMULACIONES · ${b.n} CORRIDAS",color=scAmber,fontWeight=FontWeight.Black,fontSize=13.sp)
+                        Text("${b.away} ${"%.1f".format(b.meanAway)}  —  ${b.home} ${"%.1f".format(b.meanHome)}",color=scText,fontSize=16.sp,fontWeight=FontWeight.Bold)
+                        Text("Total medio ${"%.1f".format(b.meanTotal)} · Mediana ${"%.0f".format(b.medianTotal)} · Desv. ${"%.1f".format(b.sdTotal)}",color=scText,fontSize=12.sp)
+                        Text("Percentiles: P10 ${b.p10}  ·  P25 ${b.p25}  ·  P75 ${b.p75}  ·  P90 ${b.p90}",color=scMuted,fontSize=11.sp)
+                        val line=b.totalLine
+                        if(line!=null){
+                            Text("O/U ${"%.1f".format(line)} · OVER ${"%.1f".format((b.overRate ?: 0.0)*100)}% · UNDER ${"%.1f".format((b.underRate ?: 0.0)*100)}% · PUSH ${"%.1f".format((b.pushRate ?: 0.0)*100)}%",color=scGreen,fontSize=11.sp)
+                        }else Text("Sin línea de mercado: no se calcula OVER/UNDER.",color=scAmber,fontSize=11.sp)
+                        Text("Victorias: ${b.away} ${"%.1f".format(b.awayWinRate*100)}% · ${b.home} ${"%.1f".format(b.homeWinRate*100)}% · Empate ${"%.1f".format(b.tieRate*100)}%",color=scMuted,fontSize=11.sp)
+                        HorizontalDivider(color=Color(0xff304659))
+                        Text("DISTRIBUCIÓN DE TOTALES · intervalos de 5",color=scAmber,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                        val peak=(b.totalHistogram.maxOfOrNull{it.second} ?: 1).coerceAtLeast(1)
+                        b.totalHistogram.sortedByDescending{it.second}.take(8).sortedBy{it.first}.forEach{(bucket,n)->
+                            Text("$bucket–${bucket+4} puntos · $n (${String.format("%.1f",100.0*n/b.n)}%)",color=scMuted,fontSize=10.sp)
+                            LinearProgressIndicator(progress={n.toFloat()/peak},modifier=Modifier.fillMaxWidth(),color=scBlue)
+                        }
+                        Text("MARCADOR MÁS FRECUENTE",color=scAmber,fontSize=11.sp,fontWeight=FontWeight.Bold)
+                        b.mostCommonScores.take(5).forEach{f->
+                            Text("${b.away} ${f.away} – ${b.home} ${f.home} · ${f.count} corridas",color=scMuted,fontSize=11.sp)
+                        }
+                    }
+                }
+            }
+            item {
+                Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                        Text("AUDITOR DE DRIVES Y ANOTACIONES",color=scAmber,fontWeight=FontWeight.Black,fontSize=13.sp)
+                        b.teamLines.forEach{t->
+                            Text(t.team,color=scText,fontSize=12.sp,fontWeight=FontWeight.Bold)
+                            Text("Drives ${"%.1f".format(t.meanDrives)} · Pases ${"%.1f".format(t.meanPasses)} · Acarreos ${"%.1f".format(t.meanRuns)}",color=scMuted,fontSize=11.sp)
+                            Text("TD ${"%.2f".format(t.meanTd)} · FG ${"%.2f".format(t.meanFg)} · Punt ${"%.2f".format(t.meanPunts)} · TO ${"%.2f".format(t.meanTurnovers)}",color=scMuted,fontSize=11.sp)
+                        }
+                        val c=b.calibration
+                        HorizontalDivider(color=Color(0xff304659))
+                        Text("CONTROL DE CALIBRACIÓN",color=scGreen,fontWeight=FontWeight.Bold,fontSize=11.sp)
+                        Text("Corte: semana ${c.cutoffWeek} · ${c.leagueGames} partidos anteriores · ${c.awayGames}/${c.homeGames} por equipo",color=scMuted,fontSize=11.sp)
+                        Text("PPG regularizados: ${b.away} ${"%.1f".format(c.awayPpg)} · ${b.home} ${"%.1f".format(c.homePpg)}; tempo de drives ${"%.1f".format(c.driveTarget)}",color=scMuted,fontSize=11.sp)
+                        Text(if(b.pregame)"✓ Generado antes del kickoff (datos por semana)" else "NO PREGAME: comparación histórica no válida sin datos congelados",color=if(b.pregame)scGreen else scAmber,fontSize=10.sp)
+                        Text("Aviso: los datos PBP de equipo requieren snapshot pregame para backtesting estricto; sin ese snapshot, no se acredita mejora de precisión.",color=scMuted,fontSize=10.sp)
+                    }
+                }
+            }
+            item {
+                Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                        Text("PLAYER USAGE · PROMEDIOS DE ${b.n}",color=scAmber,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                        listOf(b.away,b.home).forEach{team->
+                            Text(team,color=scGreen,fontWeight=FontWeight.Bold,fontSize=12.sp)
+                            b.playerLines.filter{it.team==team}.take(10).forEach{p->
+                                Text("${p.position} ${p.name} · pase ${"%.0f".format(p.meanPassYards)} yd · carrera ${"%.0f".format(p.meanRushYards)} yd · recepción ${"%.0f".format(p.meanRecYards)} yd",color=scText,fontSize=10.sp)
+                                Text("Intentos ${"%.1f".format(p.meanAttempts)} · acar. ${"%.1f".format(p.meanCarries)} · targets ${"%.1f".format(p.meanTargets)} · P90 yd ${p.p90PassYards}/${p.p90RushYards}/${p.p90RecYards}",color=scMuted,fontSize=10.sp)
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                OutlinedButton(modifier=Modifier.fillMaxWidth(),onClick={
+                    pendingJson=SimcastBatchArchive.toJson(b).toString(2)
+                    export.launch("NFL_Batch_${b.away}_${b.home}_W${b.week}_${b.n}.json")
+                }){Text("EXPORTAR AUDITORÍA JSON · ${b.n} CORRIDAS",fontWeight=FontWeight.Bold,fontSize=11.sp)}
+                Text("Resumen de lotes guardado para Data Vault V8 (máximo 5 por juego). El marcador animado corresponde a UNA corrida de muestra.",color=scMuted,fontSize=10.sp)
             }
         }
         if(sim!=null){

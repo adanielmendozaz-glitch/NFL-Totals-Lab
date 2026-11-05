@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 9) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 10) {
 
     private fun ensureMatchupSchema(db: SQLiteDatabase) {
         db.execSQL("""
@@ -104,6 +104,40 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         w.execSQL("CREATE INDEX IF NOT EXISTS idx_simcast_game ON simcast_runs(game_id,created_at)")
     }
 
+    private fun ensureSimcastBatchSchema(w:SQLiteDatabase) {
+        w.execSQL("""CREATE TABLE IF NOT EXISTS simcast_batches(
+            batch_key TEXT PRIMARY KEY, game_id TEXT NOT NULL, season INTEGER NOT NULL,
+            week INTEGER NOT NULL, created_at INTEGER NOT NULL, pregame INTEGER NOT NULL,
+            payload TEXT NOT NULL
+        )""")
+        w.execSQL("CREATE INDEX IF NOT EXISTS idx_simcast_batches_game ON simcast_batches(game_id,created_at)")
+    }
+
+    fun saveSimcastBatch(game:GameRecord,key:String,pregame:Boolean,raw:String) {
+        val w=writableDatabase
+        w.beginTransaction()
+        try {
+            w.insertWithOnConflict("simcast_batches",null,ContentValues().apply{
+                put("batch_key",key);put("game_id",game.gameId);put("season",game.season)
+                put("week",game.week);put("created_at",System.currentTimeMillis())
+                put("pregame",if(pregame)1 else 0);put("payload",raw)
+            },SQLiteDatabase.CONFLICT_REPLACE)
+            w.execSQL("""DELETE FROM simcast_batches WHERE game_id=? AND batch_key NOT IN
+                (SELECT batch_key FROM simcast_batches WHERE game_id=? ORDER BY created_at DESC, batch_key DESC LIMIT 5)""",
+                arrayOf(game.gameId,game.gameId))
+            w.setTransactionSuccessful()
+        } finally{w.endTransaction()}
+    }
+
+    fun exportSimcastBatches(season:Int):org.json.JSONArray = org.json.JSONArray().apply {
+        readableDatabase.rawQuery(
+            "SELECT payload FROM simcast_batches WHERE season=? ORDER BY created_at DESC",
+            arrayOf(season.toString())
+        ).use { c -> while(c.moveToNext()) {
+            runCatching{org.json.JSONObject(c.getString(0))}.getOrNull()?.let{put(it)}
+        }}
+    }
+
     fun saveSimcastReport(game:GameRecord,seed:Int,raw:String) {
         val w=writableDatabase
         val key="${game.gameId}|$seed"
@@ -136,6 +170,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         ensureMatchupScoreSchema(db)
         DataCenter.ensureTables(db)
         ensureSimcastSchema(db)
+        ensureSimcastBatchSchema(db)
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -273,6 +308,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         ensureMatchupScoreSchema(db)
         DataCenter.ensureTables(db)
         ensureSimcastSchema(db)
+        ensureSimcastBatchSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -340,6 +376,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
             DataCenter.ensureTables(db)
         }
         if (oldVersion < 9) ensureSimcastSchema(db)
+        if (oldVersion < 10) ensureSimcastBatchSchema(db)
     }
 
     fun upsertGames(games: List<GameRecord>) {

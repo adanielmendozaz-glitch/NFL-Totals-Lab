@@ -14,6 +14,13 @@ object SimcastArchive {
         put("awayPlayerCount",s.awayPlayerCount);put("homePlayerCount",s.homePlayerCount)
         put("awayQuarters",JSONArray(s.awayQuarters));put("homeQuarters",JSONArray(s.homeQuarters))
         put("awayFinal",s.awayFinal);put("homeFinal",s.homeFinal)
+        put("calibration",JSONObject().apply {
+            put("cutoffWeek",s.calibration.cutoffWeek)
+            put("leagueGames",s.calibration.leagueGames)
+            put("awayScoringFactor",s.calibration.awayScoringFactor)
+            put("homeScoringFactor",s.calibration.homeScoringFactor)
+            put("clockFactor",s.calibration.clockFactor)
+        })
         put("lineup",JSONObject().apply{
             fun team(l:TeamLineup)=JSONObject().apply{
                 put("startingQb",l.startingQb);put("outPlayers",JSONArray(l.outNames.toList()))

@@ -104,7 +104,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V1.4 · LINEUP + VISUAL ENGINE",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V1.5 · CALIBRATION + SIMULATION CENTER",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -176,6 +176,8 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.VISUAL->SimcastGameScreen(
                     games=games,initialGame=simGame,
                     onSimulate=repo::simulateMatch,
+                    onBatch=repo::simulateBatch,
+                    audit=repo.batchAudit(season),
                     onBack={sub=SubTab.NONE;simGame=null}
                 )
                 sub==SubTab.DATA->DataCenterScreen(
