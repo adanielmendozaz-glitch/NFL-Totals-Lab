@@ -126,7 +126,7 @@ fun SimcastGameScreen(
         item{
             Button(
                 modifier=Modifier.fillMaxWidth(),enabled=selected!=null&&!loading,
-                onClick={runScenario},colors=ButtonDefaults.buttonColors(containerColor=scGreen)
+                onClick={runScenario()},colors=ButtonDefaults.buttonColors(containerColor=scGreen)
             ){Text(if(loading)"GENERANDO PARTIDO…" else if(sim==null)"SIMULAR PARTIDO COMPLETO" else "NUEVA SIMULACIÓN",color=scBg,fontWeight=FontWeight.Bold)}
             error?.let{Text(it,color=scAmber,fontSize=11.sp)}
             Text("Motor experimental: drive + down/distancia + Player Weekly. No modifica el pick del Core.",color=scMuted,fontSize=10.sp)
@@ -207,8 +207,8 @@ fun SimcastGameScreen(
                             (1..4).forEach{Text("Q$it",Modifier.weight(1f),color=scMuted,fontSize=11.sp)}
                             Text("TOT",Modifier.weight(1f),color=scText,fontSize=11.sp)
                         }
-                        QuarterLine(s.away,s.awayQuarters)
-                        QuarterLine(s.home,s.homeQuarters)
+                        Row(Modifier.fillMaxWidth()) { QuarterLine(s.away,s.awayQuarters) }
+                        Row(Modifier.fillMaxWidth()) { QuarterLine(s.home,s.homeQuarters) }
                         HorizontalDivider(color=Color(0xff304659))
                         listOf(s.away,s.home).forEach{team->
                             val teamPlays=s.plays.filter{it.offense==team}
