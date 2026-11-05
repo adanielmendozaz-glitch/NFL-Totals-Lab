@@ -15,6 +15,41 @@ data class TeamUsage(val team:String, val throughWeek:Int, val players:List<Usag
     val verified:Boolean get()=throughWeek>0 && players.any{it.position=="QB" && it.passAttempts>0}
 }
 
+/** Pregame input only: officially announced starter when known, otherwise manually selected QB.
+ * Out means confirmed unavailable; Questionable is not excluded until final inactives.
+ * This deliberately does not alter the official Core pick. */
+data class TeamLineup(
+    val startingQb:String="",
+    val outNames:Set<String> = emptySet(),
+    val source:String="Sin titular confirmado",
+    val verified:Boolean=false
+)
+
+data class GameLineup(
+    val away:TeamLineup=TeamLineup(),
+    val home:TeamLineup=TeamLineup()
+)
+
+/** Fixed to this specific fixture; never generalized across later weeks. Updated 2026-11-05.
+ * Source: https://www.baltimoreravens.com/news/lamar-jackson-tyler-huntley-injured-reserve-austin-reed-adisa-isaac-jake-moody
+ * Inactives are not inferred for players listed Questionable. */
+object PregameLineup {
+    fun forGame(game:GameRecord):GameLineup {
+        if(game.season==2026 && game.week==9 && game.homeTeam=="BAL" && game.awayTeam=="JAX"){
+            return GameLineup(
+                away=TeamLineup(source="JAX: titular pendiente de confirmar"),
+                home=TeamLineup(
+                    startingQb="Joe Fagnano",
+                    outNames=setOf("Lamar Jackson","Tyler Huntley"),
+                    source="BAL: QB anunciado y bajas en IR, 2026-11-05",
+                    verified=true
+                )
+            )
+        }
+        return GameLineup()
+    }
+}
+
 data class SimPlay(
     val index:Int, val drive:Int, val offense:String, val quarter:Int, val clock:Int,
     val down:Int, val distance:Int, val fromYard:Int, val toYard:Int,
@@ -37,7 +72,8 @@ data class GameSim(
     val awayPlayerCount:Int, val homePlayerCount:Int,
     val plays:List<SimPlay>, val players:List<SimPlayerStats>,
     val usageInputs:List<UsagePlayer>,
-    val awayQuarters:List<Int>, val homeQuarters:List<Int>
+    val awayQuarters:List<Int>, val homeQuarters:List<Int>,
+    val lineup:GameLineup=GameLineup()
 ){
     val awayFinal:Int get()=awayQuarters.sum()
     val homeFinal:Int get()=homeQuarters.sum()
@@ -50,14 +86,28 @@ data class GameSim(
 class PlayerUsageDriveEngine {
     fun simulate(
         game:GameRecord, awayUsage:TeamUsage, homeUsage:TeamUsage,
-        awayMetrics:TeamMetrics?, homeMetrics:TeamMetrics?, seed:Int
+        awayMetrics:TeamMetrics?, homeMetrics:TeamMetrics?, seed:Int,
+        lineup:GameLineup=GameLineup()
     ):GameSim {
         val rng=Random(seed)
         val plays=mutableListOf<SimPlay>()
         val stats=linkedMapOf<String,SimPlayerStats>()
         val awayQ=IntArray(4)
         val homeQ=IntArray(4)
-        val usage=mapOf(game.awayTeam to awayUsage, game.homeTeam to homeUsage)
+        // Exclude confirmed OUT / IR for this specific game, not questionable athletes.
+        val withLineup=mapOf(game.awayTeam to lineup.away, game.homeTeam to lineup.home)
+        val usage=mapOf(game.awayTeam to awayUsage, game.homeTeam to homeUsage).mapValues { (team,base) ->
+            val outs=withLineup.getValue(team).outNames.map { it.trim().lowercase() }.toSet()
+            base.copy(players=base.players.filterNot { it.name.trim().lowercase() in outs })
+        }
+        val starters=usage.mapValues { (team,base) ->
+            val name=withLineup.getValue(team).startingQb.trim()
+            val pool=base.players.filter { it.position=="QB" }
+            val exact=pool.firstOrNull { it.name.equals(name,ignoreCase=true) }
+            if(name.isNotEmpty()) exact ?: UsagePlayer("manual:$team:$name",name,"QB",team,passAttempts=1.0)
+            else pool.maxByOrNull { it.passAttempts }
+                ?: UsagePlayer("fallback:$team:QB","QB sin datos","QB",team,passAttempts=1.0)
+        }
         val teamMetrics=mapOf(game.awayTeam to awayMetrics, game.homeTeam to homeMetrics)
         var remaining=3600
         var offense=if(rng.nextBoolean())game.awayTeam else game.homeTeam
@@ -70,9 +120,10 @@ class PlayerUsageDriveEngine {
         fun currentScore(team:String)=if(team==game.awayTeam)awayQ.sum() else homeQ.sum()
         fun player(team:String,role:String):UsagePlayer {
             val pool=usage.getValue(team).players
+            val starter=starters.getValue(team)
             val eligible=when(role){
-                "QB"->pool.filter{it.position=="QB" && it.passAttempts>0}
-                "RUSH"->pool.filter{it.carries>0}
+                "QB"->listOf(starter)
+                "RUSH"->pool.filter{it.carries>0 && (it.position!="QB" || it.id==starter.id)}
                 else->pool.filter{it.targets>0}
             }
             if(eligible.isEmpty())return UsagePlayer("fallback:$team:$role",when(role){
@@ -96,7 +147,9 @@ class PlayerUsageDriveEngine {
         // Approximate dropback tendency from prior-week passing + rushing usage.
         fun passShare(team:String):Double {
             val x=usage.getValue(team).players
-            val qb=x.sumOf{it.passAttempts}
+            // Play-call rate is team-level; use the most recent QB usage in team data,
+            // while only the selected starter actually throws on the simulated field.
+            val qb=x.filter{it.position=="QB"}.sumOf{it.passAttempts}
             val rush=x.sumOf{it.carries}
             return if(qb+rush>20.0) (qb/(qb+rush)).coerceIn(.43,.76) else .58
         }
@@ -238,6 +291,11 @@ class PlayerUsageDriveEngine {
         }
         return GameSim(game.gameId,game.season,game.week,game.awayTeam,game.homeTeam,seed,
             awayUsage.throughWeek,homeUsage.throughWeek,awayUsage.players.size,homeUsage.players.size,
-            plays,stats.values.toList(),awayUsage.players+homeUsage.players,awayQ.toList(),homeQ.toList())
+            plays,stats.values.toList(),
+            listOf(game.awayTeam,game.homeTeam).flatMap { team ->
+                val inputs=usage.getValue(team).players
+                val starter=starters.getValue(team)
+                if(inputs.any{it.id==starter.id})inputs else inputs+starter
+            },awayQ.toList(),homeQ.toList(),lineup)
     }
 }

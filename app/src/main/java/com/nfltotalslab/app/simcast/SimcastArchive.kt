@@ -14,6 +14,13 @@ object SimcastArchive {
         put("awayPlayerCount",s.awayPlayerCount);put("homePlayerCount",s.homePlayerCount)
         put("awayQuarters",JSONArray(s.awayQuarters));put("homeQuarters",JSONArray(s.homeQuarters))
         put("awayFinal",s.awayFinal);put("homeFinal",s.homeFinal)
+        put("lineup",JSONObject().apply{
+            fun team(l:TeamLineup)=JSONObject().apply{
+                put("startingQb",l.startingQb);put("outPlayers",JSONArray(l.outNames.toList()))
+                put("source",l.source);put("verified",l.verified)
+            }
+            put("away",team(s.lineup.away));put("home",team(s.lineup.home))
+        })
         put("usageInputs",JSONArray().apply{s.usageInputs.forEach{p->put(JSONObject().apply{
             put("id",p.id);put("team",p.team);put("name",p.name)
             put("position",p.position);put("passAttemptsWeighted",p.passAttempts)

@@ -174,11 +174,11 @@ class NflRepository(
     }
 
     /** Separate experimental play-level scenario; does not overwrite official predictions. */
-    suspend fun simulateMatch(game:GameRecord,seed:Int):GameSim = withContext(Dispatchers.Default){
+    suspend fun simulateMatch(game:GameRecord,seed:Int,lineup:GameLineup):GameSim = withContext(Dispatchers.Default){
         val a=dataCenter.usageFor(game,game.awayTeam)
         val h=dataCenter.usageFor(game,game.homeTeam)
         val m=db.loadMetrics(game.season).associateBy{it.team}
-        val run=PlayerUsageDriveEngine().simulate(game,a,h,m[game.awayTeam],m[game.homeTeam],seed)
+        val run=PlayerUsageDriveEngine().simulate(game,a,h,m[game.awayTeam],m[game.homeTeam],seed,lineup)
         withContext(Dispatchers.IO){db.saveSimcastReport(game,seed,SimcastArchive.toJson(run).toString())}
         run
     }
