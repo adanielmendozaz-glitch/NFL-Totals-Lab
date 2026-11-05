@@ -74,7 +74,7 @@ fun DataCenterScreen(
                     Text(feed.title,color=Text,fontWeight=FontWeight.Bold,fontSize=14.sp)
                     Text("Fuente: ${feed.source}",color=Muted,fontSize=11.sp)
                     if(status!=null){
-                        Text("${status.rows} filas · hasta semana ${status.throughWeek}",color=Green,fontSize=11.sp)
+                        Text("${status.rows} filas · ${if(status.throughWeek>0)"hasta semana ${status.throughWeek}" else "semana de corte no determinada"}",color=Green,fontSize=11.sp)
                         Text("Importado: ${Date(status.importedAt)}",color=Muted,fontSize=10.sp)
                         if(status.sourceAsOf.isNotBlank())Text("Datos hasta: ${status.sourceAsOf}",color=Muted,fontSize=10.sp)
                         Text("Huella SHA-256: ${status.sha256.take(14)}…",color=Muted,fontSize=9.sp)

@@ -38,6 +38,7 @@ fun GameDetailScreen(
     matchupFeatures:List<MatchupFeature>,
     matchupScore:MatchupScoreCensus?,
     onBack:()->Unit,
+    onSimcast:()->Unit,
     onAnalyze:suspend()->Prediction,
     onLoadRoster:suspend()->GameRosterIntelligence,
     onBet:(Prediction)->Unit
@@ -88,6 +89,16 @@ fun GameDetailScreen(
                 verticalArrangement=Arrangement.spacedBy(10.dp)
             ){
                 item{MatchupScoreCard(game)}
+                item{
+                    Button(
+                        onClick=onSimcast,
+                        modifier=Modifier.fillMaxWidth(),
+                        colors=ButtonDefaults.buttonColors(containerColor=DetailBlue)
+                    ){
+                        Text("SIMULAR ${game.awayTeam} @ ${game.homeTeam} · PLAYER USAGE",color=DetailBg,fontSize=11.sp,fontWeight=FontWeight.Black)
+                    }
+                    Text("Escenario estadístico independiente; no cambia el pick oficial del Core.",color=DetailMuted,fontSize=10.sp)
+                }
 
                 item{
                     SectionTitle("DATOS BASE · MERCADO Y CONTEXTO")

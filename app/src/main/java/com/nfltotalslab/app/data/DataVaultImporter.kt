@@ -177,6 +177,15 @@ object DataVaultImporter {
             mergeKv(w,"last_sync",root.optLongOrNull("last_sync"))
             mergeKv(w,"last_deep_sync",root.optLongOrNull("last_deep_sync"))
             DataCenter.restore(w,root)
+            // Experimental Simcast reports are restored independently and never become official picks.
+            each(root,"simcast_runs"){j->
+                val key="${j.req("gameId")}|${j.optInt("seed",0)}"
+                insert("simcast_runs",ContentValues().apply{
+                    put("run_key",key);put("game_id",j.req("gameId"))
+                    put("season",j.optInt("season",season));put("week",j.optInt("week",0))
+                    put("created_at",System.currentTimeMillis());put("payload",j.toString())
+                })
+            }
             w.setTransactionSuccessful()
         }finally{
             w.endTransaction()

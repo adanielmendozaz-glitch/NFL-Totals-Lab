@@ -58,6 +58,7 @@ fun NflTotalsApp(context:Context){
     var syncing by remember{mutableStateOf(false)}
     var syncMsg by remember{mutableStateOf<String?>(null)}
     var selectedGame by remember{mutableStateOf<GameRecord?>(null)}
+    var simGame by remember{mutableStateOf<GameRecord?>(null)}
     var liveEnabled by remember{mutableStateOf(false)}
     var liveLoading by remember{mutableStateOf(false)}
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
@@ -103,7 +104,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V1.2 · DECISION + DATA CENTER",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V1.3 · PLAYER USAGE SIMCAST",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -147,6 +148,7 @@ fun NflTotalsApp(context:Context){
                         matchupFeatures=matchupFeatures.filter{it.team==g.awayTeam || it.team==g.homeTeam},
                         matchupScore=matchupScores.firstOrNull{it.gameId==g.gameId},
                         onBack={selectedGame=null},
+                        onSimcast={simGame=g;selectedGame=null;sub=SubTab.VISUAL},
                         onAnalyze={
                             val np=repo.analyze(g)
                             refresh()
@@ -171,7 +173,11 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.BANK->BankPortfolioScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
                 sub==SubTab.CALIB->ProgressiveCalibrationScreen(repo.calibrationState(),calibrations){sub=SubTab.NONE}
-                sub==SubTab.VISUAL->SimcastPreviewScreen(onBack={sub=SubTab.NONE})
+                sub==SubTab.VISUAL->SimcastGameScreen(
+                    games=games,initialGame=simGame,
+                    onSimulate=repo::simulateMatch,
+                    onBack={sub=SubTab.NONE;simGame=null}
+                )
                 sub==SubTab.DATA->DataCenterScreen(
                     season=season,snapshots=feeds,onSync=repo::refreshFeeds,
                     onImport=repo::importFeed,onReload={refresh()},onBack={sub=SubTab.NONE}
@@ -216,7 +222,7 @@ fun NflTotalsApp(context:Context){
                     lastSync=repo.lastSync(),
                     onSeason={season=it;refresh()},
                     onOpenData={sub=SubTab.DATA},
-                    onOpenVisual={sub=SubTab.VISUAL},
+                    onOpenVisual={simGame=null;sub=SubTab.VISUAL},
                     onBuildVault={repo.exportDataVault(season)},
                     onPreviewVault={repo.previewDataVault(it)},
                     onImportVault={repo.importDataVault(it)},
@@ -1725,11 +1731,11 @@ private fun SettingsScreen(
                 Text("Aprende sólo con FINALs de la MISMA generación del Core. Legacy 0.4 queda aislado. No modifica el Core.",color=Muted,fontSize=10.sp)
 
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
-                Text("SIMCAST · VISUAL LAB",color=Muted,fontSize=10.sp)
-                Text("Cancha, 22 jugadores en círculos y animación táctico-visual (prototipo sin modelo predictivo).",fontSize=11.sp)
+                Text("SIMCAST · PLAYER USAGE",color=Muted,fontSize=10.sp)
+                Text("Simula cada partido y ambos equipos con Player Weekly, downs, drives, anotaciones y estadísticas individuales. Motor experimental separado del Core.",fontSize=11.sp)
                 Spacer(Modifier.height(7.dp))
                 OutlinedButton(onClick=onOpenVisual,modifier=Modifier.fillMaxWidth()){
-                    Text("VER PREVIEW SIMCAST",fontSize=11.sp,fontWeight=FontWeight.Bold)
+                    Text("ABRIR SIMCAST DE PARTIDOS",fontSize=11.sp,fontWeight=FontWeight.Bold)
                 }
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("DATA CENTER · NFL 2026",color=Muted,fontSize=10.sp)
@@ -1740,7 +1746,7 @@ private fun SettingsScreen(
                 }
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
-                Text("Exporta juegos, métricas, predicciones, Shadow, calibración, apuestas, Bank y cuatro fuentes Data Center.",fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("Exporta juegos, métricas, predicciones, Shadow, calibración, apuestas, Bank, fuentes Data Center y simulaciones individuales.",fontWeight=FontWeight.Bold,fontSize=11.sp)
                 Text("Será la base del backtest y del ajuste real de pesos.",color=Muted,fontSize=10.sp)
                 Spacer(Modifier.height(8.dp))
                 Button(

@@ -1,3 +1,5 @@
+> **V1.3 Player Usage Simcast:** Leer [SIMCAST_PLAYER_USAGE_V1_3.md](SIMCAST_PLAYER_USAGE_V1_3.md) para cambios, compatibilidad y limitaciones.
+
 # Actualización 2026-11-05 — Data Center V1.2 / Visual Lab
 
 **Lee [DATA_CENTER_V1_2.md](DATA_CENTER_V1_2.md)** para conocer el alcance, las cuatro cargas CSV, la sincronización, el Data Vault V6 y el preview visual no predictivo.

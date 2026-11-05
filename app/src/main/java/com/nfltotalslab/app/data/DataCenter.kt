@@ -12,6 +12,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.Locale
+import kotlin.math.pow
+import com.nfltotalslab.app.simcast.UsagePlayer
+import com.nfltotalslab.app.simcast.TeamUsage
 
 /** Four independently versioned snapshots. All rows are stored unchanged, with their source provenance. */
 enum class NflFeed(val title:String, val source:String, val url:String) {
@@ -195,6 +198,49 @@ class DataCenter(private val db:DbHelper){
                 (row.optString("rushing_attempts").toIntOrNull() ?: 0))
         if(plays<=0)return official
         return official.copy(plays=plays)
+    }
+
+    /** NFLverse weekly-only player usage, strictly earlier than the requested matchup week. */
+    fun usageFor(game:GameRecord,team:String):TeamUsage {
+        val feed=NflFeed.PLAYER_WEEKLY
+        val snap=snapshot(game.season,feed) ?: return TeamUsage(team,0,emptyList())
+        val maxWeek=minOf(snap.throughWeek,game.week-1)
+        if(maxWeek<1)return TeamUsage(team,0,emptyList())
+        data class Acc(val id:String, val name:String, val position:String, val last:Int,
+                       var attempts:Double, var carries:Double, var targets:Double)
+        val users=mutableMapOf<String,Acc>()
+        var latest=0
+        db.readableDatabase.rawQuery(
+            "SELECT payload FROM nfl_feed_rows WHERE season=? AND feed=? AND row_key LIKE ?",
+            arrayOf(game.season.toString(),feed.name,"%|${team}|%")
+        ).use{c->
+            while(c.moveToNext()){
+                val j=runCatching{JSONObject(c.getString(0))}.getOrNull() ?: continue
+                val week=j.optString("week").toIntOrNull() ?: continue
+                if(week !in maxOf(1,maxWeek-3)..maxWeek)continue
+                if(j.optString("recent_team").ifBlank{j.optString("team")} != team)continue
+                latest=maxOf(latest,week)
+                val id=j.optString("player_id").ifBlank{j.optString("gsis_id")}
+                    .ifBlank{j.optString("player_name")}.ifBlank{j.optString("player_display_name")}
+                if(id.isBlank())continue
+                val name=j.optString("player_display_name").ifBlank{j.optString("player_name")}.ifBlank{id}
+                val position=j.optString("position").uppercase(Locale.US)
+                if(position !in setOf("QB","RB","FB","WR","TE"))continue
+                fun stat(vararg names:String):Double {
+                    return names.firstNotNullOfOrNull{j.optString(it).toDoubleOrNull()}?.coerceAtLeast(0.0) ?: 0.0
+                }
+                val weight=.72.pow((maxWeek-week).toDouble())
+                val a=stat("attempts","passing_attempts")*weight
+                val r=stat("carries","rushing_attempts")*weight
+                val t=stat("targets")*weight
+                val prev=users[id]
+                if(prev==null)users[id]=Acc(id,name,position,week,a,r,t)
+                else{prev.attempts+=a;prev.carries+=r;prev.targets+=t}
+            }
+        }
+        return TeamUsage(team,latest,users.values
+            .filter{it.attempts>0.0 || it.carries>0.0 || it.targets>0.0}
+            .map{UsagePlayer(it.id,it.name,it.position,team,it.attempts,it.carries,it.targets)})
     }
 
     fun exportHistory(season:Int):JSONArray = JSONArray().apply{

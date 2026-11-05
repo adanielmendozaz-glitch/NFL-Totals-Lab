@@ -44,5 +44,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: NFL-Data-Center-V1.2.1-Paralelo
+          name: NFL-Data-Center-V1.3-Player-Usage-Paralelo
           path: app/build/outputs/apk/debug/app-debug.apk

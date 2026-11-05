@@ -11,6 +11,7 @@ import com.nfltotalslab.app.model.DecisionEngineV2
 import com.nfltotalslab.app.model.LegacyTotalsEngine
 import com.nfltotalslab.app.calibration.ProgressiveCalibrator
 import com.nfltotalslab.app.integrity.KickoffGuard
+import com.nfltotalslab.app.simcast.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -172,6 +173,16 @@ class NflRepository(
         states
     }
 
+    /** Separate experimental play-level scenario; does not overwrite official predictions. */
+    suspend fun simulateMatch(game:GameRecord,seed:Int):GameSim = withContext(Dispatchers.Default){
+        val a=dataCenter.usageFor(game,game.awayTeam)
+        val h=dataCenter.usageFor(game,game.homeTeam)
+        val m=db.loadMetrics(game.season).associateBy{it.team}
+        val run=PlayerUsageDriveEngine().simulate(game,a,h,m[game.awayTeam],m[game.homeTeam],seed)
+        withContext(Dispatchers.IO){db.saveSimcastReport(game,seed,SimcastArchive.toJson(run).toString())}
+        run
+    }
+
     fun feeds(season:Int) = dataCenter.all(season)
     suspend fun refreshFeeds(season:Int,force:Boolean=false) = dataCenter.refresh(season,force)
     suspend fun importFeed(season:Int,feed:NflFeed,reader:java.io.BufferedReader) = dataCenter.importDocument(feed,season,reader)
@@ -220,7 +231,8 @@ class NflRepository(
             lastSync=lastSync(),
             lastDeepSync=lastDeepSync(),
             feedBackup=dataCenter.export(season),
-            feedHistory=dataCenter.exportHistory(season)
+            feedHistory=dataCenter.exportHistory(season),
+            simcastReports=db.exportSimcastReports(season)
         )
 
     fun previewDataVault(raw:String):VaultImportPreview =
