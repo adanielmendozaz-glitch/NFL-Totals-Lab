@@ -17,16 +17,20 @@ object DataVaultExporter {
         bets:List<BetRecord>,
         bank:List<BankEntry>,
         lastSync:Long?,
-        lastDeepSync:Long?
+        lastDeepSync:Long?,
+        feedBackup:JSONArray = JSONArray(),
+        feedHistory:JSONArray = JSONArray()
     ):String{
         val root=JSONObject()
-        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V5")
+        root.put("schema","NFL_TOTALS_LAB_DATA_VAULT_V6")
         root.put("exported_at",System.currentTimeMillis())
         root.put("season",season)
-        root.put("app_version","1.1.0")
-        root.put("current_model_version","1.1.0-decision-rebuild")
+        root.put("app_version","1.2.0")
+        root.put("current_model_version","1.2.0-data-center")
         root.put("last_sync",lastSync ?: JSONObject.NULL)
         root.put("last_deep_sync",lastDeepSync ?: JSONObject.NULL)
+        root.put("data_center_feeds",feedBackup)
+        root.put("data_center_history",feedHistory)
 
         root.put("core_architecture",JSONObject().apply{
             put("generation","1.1.0-decision-rebuild")

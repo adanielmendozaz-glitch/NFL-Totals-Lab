@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,7 +36,7 @@ import java.util.*
 import kotlin.math.pow
 
 private enum class MainTab{JORNADA,RANKING,EQUIPOS,AJUSTES}
-private enum class SubTab{NONE,CENSO,CORE,SHADOW,AUDIT,APUESTAS,BANK,BRIER,CALIB}
+private enum class SubTab{NONE,CENSO,CORE,SHADOW,AUDIT,APUESTAS,BANK,BRIER,CALIB,DATA,VISUAL}
 
 @Composable
 fun NflTotalsApp(context:Context){
@@ -45,6 +47,7 @@ fun NflTotalsApp(context:Context){
     var season by remember{mutableIntStateOf(2026)}
     var games by remember{mutableStateOf(repo.games(season))}
     var metrics by remember{mutableStateOf(repo.metrics(season))}
+    var feeds by remember{mutableStateOf(repo.feeds(season))}
     var preds by remember{mutableStateOf(repo.predictions())}
     var shadows by remember{mutableStateOf(repo.shadows())}
     var calibrations by remember{mutableStateOf(repo.calibrations())}
@@ -60,7 +63,16 @@ fun NflTotalsApp(context:Context){
     var liveScores by remember{mutableStateOf<Map<String,LiveGameState>>(emptyMap())}
 
     fun refresh(){
-        games=repo.games(season);metrics=repo.metrics(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();matchupFeatures=repo.matchupFeatures(season);matchupScores=repo.matchupScoreCensus();bets=repo.bets();bank=repo.bank()
+        games=repo.games(season);metrics=repo.metrics(season);feeds=repo.feeds(season);preds=repo.predictions();shadows=repo.shadows();calibrations=repo.calibrations();matchupFeatures=repo.matchupFeatures(season);matchupScores=repo.matchupScoreCensus();bets=repo.bets();bank=repo.bank()
+    }
+
+    // Auto-fetch latest external files on app entry, throttled to once per 12h per season.
+    LaunchedEffect(season){
+        val notes=runCatching{repo.refreshFeeds(season)}.getOrElse{listOf("Data Center: ${it.message}")}
+        if(notes.isNotEmpty()){
+            feeds=repo.feeds(season)
+            syncMsg="DATA CENTER · ${notes.count{it.contains("Actualizado")}} fuentes actualizadas"
+        }
     }
 
     LaunchedEffect(liveEnabled,season){
@@ -91,7 +103,7 @@ fun NflTotalsApp(context:Context){
                 Row(verticalAlignment=Alignment.CenterVertically){
                     Column(Modifier.weight(1f)){
                         Text("NFL TOTALS LAB",color=Green,fontSize=11.sp,fontWeight=FontWeight.Black,letterSpacing=2.sp)
-                        Text("V1.1 · DECISION REBUILD + PATTERN LAB",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
+                        Text("V1.2 · DECISION + DATA CENTER",color=Text,fontWeight=FontWeight.Black,fontSize=19.sp)
                     }
                     Text(
                         when{
@@ -124,7 +136,7 @@ fun NflTotalsApp(context:Context){
                     val g=selectedGame!!
                     val gamePreds=preds.filter{it.gameId==g.gameId}
                     val p=gamePreds
-                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="1.1.0-decision-rebuild"}
+                        .filter{it.analysisSource=="AUTO_CENSUS" && it.modelVersion=="1.2.0-data-center"}
                         .maxByOrNull{it.createdAt}
                         ?: gamePreds.filter{it.analysisSource=="AUTO_CENSUS"}.maxByOrNull{it.createdAt}
                         ?: gamePreds.maxByOrNull{it.createdAt}
@@ -159,6 +171,11 @@ fun NflTotalsApp(context:Context){
                 sub==SubTab.BANK->BankPortfolioScreen(bank,bets,onAdd={amount,note->repo.addBank(amount,note);refresh()},onBack={sub=SubTab.NONE})
                 sub==SubTab.BRIER->BrierScreen(preds,shadows){sub=SubTab.NONE}
                 sub==SubTab.CALIB->ProgressiveCalibrationScreen(repo.calibrationState(),calibrations){sub=SubTab.NONE}
+                sub==SubTab.VISUAL->SimcastPreviewScreen(onBack={sub=SubTab.NONE})
+                sub==SubTab.DATA->DataCenterScreen(
+                    season=season,snapshots=feeds,onSync=repo::refreshFeeds,
+                    onImport=repo::importFeed,onReload={refresh()},onBack={sub=SubTab.NONE}
+                )
                 main==MainTab.JORNADA->ScheduleScreen(
                     games=games,preds=preds,syncing=syncing,
                     liveScores=liveScores,liveEnabled=liveEnabled,liveLoading=liveLoading,
@@ -198,6 +215,8 @@ fun NflTotalsApp(context:Context){
                     season=season,
                     lastSync=repo.lastSync(),
                     onSeason={season=it;refresh()},
+                    onOpenData={sub=SubTab.DATA},
+                    onOpenVisual={sub=SubTab.VISUAL},
                     onBuildVault={repo.exportDataVault(season)},
                     onPreviewVault={repo.previewDataVault(it)},
                     onImportVault={repo.importDataVault(it)},
@@ -1517,6 +1536,8 @@ private fun SettingsScreen(
     season:Int,
     lastSync:Long?,
     onSeason:(Int)->Unit,
+    onOpenData:()->Unit,
+    onOpenVisual:()->Unit,
     onBuildVault:()->String,
     onPreviewVault:(String)->VaultImportPreview,
     onImportVault:suspend (String)->VaultRestoreResult,
@@ -1678,7 +1699,7 @@ private fun SettingsScreen(
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(14.dp)){
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)){
         Text("AJUSTES",fontWeight=FontWeight.Black,fontSize=20.sp)
         Spacer(Modifier.height(10.dp))
         Surface(color=Card,shape=RoundedCornerShape(16.dp),border=androidx.compose.foundation.BorderStroke(1.dp,Border)){
@@ -1692,7 +1713,7 @@ private fun SettingsScreen(
                 }
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
 
-                Text("CORE V1.1 · DECISION REBUILD",color=Muted,fontSize=10.sp)
+                Text("CORE V1.2 · DATA CENTER",color=Muted,fontSize=10.sp)
                 Text("Markov 33% · Distribution 33% · Possession MC V2 33%",fontSize=12.sp)
                 Spacer(Modifier.height(6.dp))
                 Text("Consensus Trap · Turnover Chaos · cap 62% · Pattern Shadows",color=Green,fontWeight=FontWeight.Bold,fontSize=11.sp)
@@ -1704,8 +1725,22 @@ private fun SettingsScreen(
                 Text("Aprende sólo con FINALs de la MISMA generación del Core. Legacy 0.4 queda aislado. No modifica el Core.",color=Muted,fontSize=10.sp)
 
                 HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
+                Text("SIMCAST · VISUAL LAB",color=Muted,fontSize=10.sp)
+                Text("Cancha, 22 jugadores en círculos y animación táctico-visual (prototipo sin modelo predictivo).",fontSize=11.sp)
+                Spacer(Modifier.height(7.dp))
+                OutlinedButton(onClick=onOpenVisual,modifier=Modifier.fillMaxWidth()){
+                    Text("VER PREVIEW SIMCAST",fontSize=11.sp,fontWeight=FontWeight.Bold)
+                }
+                HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
+                Text("DATA CENTER · NFL 2026",color=Muted,fontSize=10.sp)
+                Text("4 entradas: Team EPA, Team Stats, Player Totals y Player Weekly. CSV automático o manual.",fontSize=11.sp,color=Text)
+                Spacer(Modifier.height(7.dp))
+                Button(onClick=onOpenData,modifier=Modifier.fillMaxWidth(),colors=ButtonDefaults.buttonColors(containerColor=Green)){
+                    Text("ABRIR DATA CENTER",fontWeight=FontWeight.Black,fontSize=11.sp)
+                }
+                HorizontalDivider(Modifier.padding(vertical=12.dp),color=Border)
                 Text("DATA VAULT",color=Muted,fontSize=10.sp)
-                Text("Exporta juegos, métricas, predicciones + motores, Shadow, calibración, apuestas, Bank y diagnósticos.",fontWeight=FontWeight.Bold,fontSize=11.sp)
+                Text("Exporta juegos, métricas, predicciones, Shadow, calibración, apuestas, Bank y cuatro fuentes Data Center.",fontWeight=FontWeight.Bold,fontSize=11.sp)
                 Text("Será la base del backtest y del ajuste real de pesos.",color=Muted,fontSize=10.sp)
                 Spacer(Modifier.height(8.dp))
                 Button(

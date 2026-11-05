@@ -1,3 +1,7 @@
+# Actualización 2026-11-05 — Data Center V1.2 / Visual Lab
+
+**Lee [DATA_CENTER_V1_2.md](DATA_CENTER_V1_2.md)** para conocer el alcance, las cuatro cargas CSV, la sincronización, el Data Vault V6 y el preview visual no predictivo.
+
 # NFL Totals Lab V0.2 — Native Android
 
 No HTML. No Netlify.

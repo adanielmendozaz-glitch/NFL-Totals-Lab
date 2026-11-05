@@ -5,7 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 
-class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 7) {
+class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db", null, 8) {
 
     private fun ensureMatchupSchema(db: SQLiteDatabase) {
         db.execSQL("""
@@ -101,6 +101,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         ensureCalibrationSchema(db)
         ensureMatchupSchema(db)
         ensureMatchupScoreSchema(db)
+        DataCenter.ensureTables(db)
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -236,6 +237,7 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         """.trimIndent())
         ensureMatchupSchema(db)
         ensureMatchupScoreSchema(db)
+        DataCenter.ensureTables(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -298,6 +300,9 @@ class DbHelper(context: Context) : SQLiteOpenHelper(context, "nfl_totals_lab.db"
         }
         if (oldVersion < 7) {
             ensureMatchupScoreSchema(db)
+        }
+        if (oldVersion < 8) {
+            DataCenter.ensureTables(db)
         }
     }
 

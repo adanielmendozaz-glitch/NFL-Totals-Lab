@@ -176,6 +176,7 @@ object DataVaultImporter {
 
             mergeKv(w,"last_sync",root.optLongOrNull("last_sync"))
             mergeKv(w,"last_deep_sync",root.optLongOrNull("last_deep_sync"))
+            DataCenter.restore(w,root)
             w.setTransactionSuccessful()
         }finally{
             w.endTransaction()

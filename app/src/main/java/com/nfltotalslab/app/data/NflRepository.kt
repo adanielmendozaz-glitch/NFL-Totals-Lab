@@ -21,9 +21,10 @@ class NflRepository(
     private val engine=TotalsEngine(100_000)
     private val v10ControlEngine=CoreV10ControlEngine(100_000)
     private val legacyEngine=LegacyTotalsEngine(100_000)
+    private val dataCenter=DataCenter(db)
     private val rosterApi=EspnRosterService()
     private val matchupApi=MatchupFeatureService()
-    private val modelVersion="1.1.0-decision-rebuild"
+    private val modelVersion="1.2.0-data-center"
     private val deepCacheMs=4L*60L*60L*1000L
     private val matchupCacheMs=12L*60L*60L*1000L
 
@@ -171,6 +172,10 @@ class NflRepository(
         states
     }
 
+    fun feeds(season:Int) = dataCenter.all(season)
+    suspend fun refreshFeeds(season:Int,force:Boolean=false) = dataCenter.refresh(season,force)
+    suspend fun importFeed(season:Int,feed:NflFeed,reader:java.io.BufferedReader) = dataCenter.importDocument(feed,season,reader)
+
     fun games(season:Int)=db.loadGames(season)
     fun metrics(season:Int)=db.loadMetrics(season)
     fun predictions()=db.loadPredictions()
@@ -188,8 +193,8 @@ class NflRepository(
         require(!KickoffGuard.isLocked(game)){"KICKOFF LOCK: el partido ya alcanzó su hora oficial"}
         require(game.totalLine!=null){"El partido no tiene línea O/U disponible"}
         val m=db.loadMetrics(game.season).associateBy{it.team}
-        val away=m[game.awayTeam]
-        val home=m[game.homeTeam]
+        val away=dataCenter.enriched(game,m[game.awayTeam])
+        val home=dataCenter.enriched(game,m[game.homeTeam])
         val p=engine.predict(game,away,home).copy(
             analysisSource="MANUAL",
             modelVersion=modelVersion,
@@ -213,7 +218,9 @@ class NflRepository(
             bets=db.loadBets(),
             bank=db.loadBank(),
             lastSync=lastSync(),
-            lastDeepSync=lastDeepSync()
+            lastDeepSync=lastDeepSync(),
+            feedBackup=dataCenter.export(season),
+            feedHistory=dataCenter.exportHistory(season)
         )
 
     fun previewDataVault(raw:String):VaultImportPreview =
@@ -264,8 +271,8 @@ class NflRepository(
 
         var count=0
         candidates.forEach{game->
-            val away=metricMap[game.awayTeam]
-            val home=metricMap[game.homeTeam]
+            val away=dataCenter.enriched(game,metricMap[game.awayTeam])
+            val home=dataCenter.enriched(game,metricMap[game.homeTeam])
             val key=inputKey(game,away,home)
             if(!db.hasAutoPrediction(game.gameId,key)){
                 val p=engine.predict(game,away,home).copy(
