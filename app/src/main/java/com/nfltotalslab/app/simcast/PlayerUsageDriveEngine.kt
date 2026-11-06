@@ -9,7 +9,9 @@ import kotlin.random.Random
 /** Inputs are prior-week NFLverse player stats, never a player's future box score. */
 data class UsagePlayer(
     val id:String, val name:String, val position:String, val team:String,
-    val passAttempts:Double=0.0, val carries:Double=0.0, val targets:Double=0.0
+    val passAttempts:Double=0.0, val carries:Double=0.0, val targets:Double=0.0,
+    val completions:Double=0.0, val passingYards:Double=0.0,
+    val rushingYards:Double=0.0, val receptions:Double=0.0, val receivingYards:Double=0.0
 )
 data class TeamUsage(val team:String, val throughWeek:Int, val players:List<UsagePlayer>){
     val verified:Boolean get()=throughWeek>0 && players.any{it.position=="QB" && it.passAttempts>0}
@@ -74,234 +76,347 @@ data class GameSim(
     val usageInputs:List<UsagePlayer>,
     val awayQuarters:List<Int>, val homeQuarters:List<Int>,
     val lineup:GameLineup=GameLineup(),
-    val calibration:SimcastCalibration=SimcastCalibration()
+    val calibration:SimcastCalibration=SimcastCalibration(),
+    val awayOvertime:Int=0, val homeOvertime:Int=0,
+    val overtimePlayed:Boolean=false,
+    val integrityErrors:List<String> = emptyList()
 ){
-    val awayFinal:Int get()=awayQuarters.sum()
-    val homeFinal:Int get()=homeQuarters.sum()
+    val awayFinal:Int get()=awayQuarters.sum()+awayOvertime
+    val homeFinal:Int get()=homeQuarters.sum()+homeOvertime
 }
 
 /**
- * Experimental drive / down-distance state simulator. Separate from the official Core
- * probability. Usage chooses real QB / target / carrier; it is NOT play-by-play recreation.
+ * V1.6 experimental drive simulator. Models possession and period boundaries explicitly.
+ * All random parameters are research priors and must be calibrated out of sample.
+ * This remains separate from the official Core probability.
  */
 class PlayerUsageDriveEngine {
     fun simulate(
         game:GameRecord, awayUsage:TeamUsage, homeUsage:TeamUsage,
         awayMetrics:TeamMetrics?, homeMetrics:TeamMetrics?, seed:Int,
-        lineup:GameLineup=GameLineup(),
-        calibration:SimcastCalibration=SimcastCalibration()
+        lineup:GameLineup=GameLineup(), calibration:SimcastCalibration=SimcastCalibration()
     ):GameSim {
         val rng=Random(seed)
         val plays=mutableListOf<SimPlay>()
         val stats=linkedMapOf<String,SimPlayerStats>()
         val awayQ=IntArray(4)
         val homeQ=IntArray(4)
-        // Exclude confirmed OUT / IR for this specific game, not questionable athletes.
-        val withLineup=mapOf(game.awayTeam to lineup.away, game.homeTeam to lineup.home)
-        val usage=mapOf(game.awayTeam to awayUsage, game.homeTeam to homeUsage).mapValues { (team,base) ->
-            val outs=withLineup.getValue(team).outNames.map { it.trim().lowercase() }.toSet()
-            base.copy(players=base.players.filterNot { it.name.trim().lowercase() in outs })
+        var awayOt=0
+        var homeOt=0
+        val withLineup=mapOf(game.awayTeam to lineup.away,game.homeTeam to lineup.home)
+        val usage=mapOf(game.awayTeam to awayUsage,game.homeTeam to homeUsage).mapValues { (team,base) ->
+            val outs=withLineup.getValue(team).outNames.map{it.trim().lowercase()}.toSet()
+            base.copy(players=base.players.filterNot{it.name.trim().lowercase() in outs})
         }
         val starters=usage.mapValues { (team,base) ->
             val name=withLineup.getValue(team).startingQb.trim()
-            val pool=base.players.filter { it.position=="QB" }
-            val exact=pool.firstOrNull { it.name.equals(name,ignoreCase=true) }
-            if(name.isNotEmpty()) exact ?: UsagePlayer("manual:$team:$name",name,"QB",team,passAttempts=1.0)
-            else pool.maxByOrNull { it.passAttempts }
-                ?: UsagePlayer("fallback:$team:QB","QB sin datos","QB",team,passAttempts=1.0)
+            val pool=base.players.filter{it.position=="QB"}
+            pool.firstOrNull{it.name.equals(name,true)}
+                ?: if(name.isNotBlank()) UsagePlayer("manual:$team:$name",name,"QB",team,passAttempts=1.0)
+                   else pool.maxByOrNull{it.passAttempts}
+                    ?: UsagePlayer("fallback:$team:QB","QB sin datos","QB",team,passAttempts=1.0)
         }
-        val teamMetrics=mapOf(game.awayTeam to awayMetrics, game.homeTeam to homeMetrics)
-        var remaining=3600
-        var offense=if(rng.nextBoolean())game.awayTeam else game.homeTeam
-        var drive=0
-        var lastSpot=25
-        var lastWasTurnover=false
-        var drivePlays=0
-
-        fun opponent(team:String)=if(team==game.awayTeam) game.homeTeam else game.awayTeam
-        fun currentScore(team:String)=if(team==game.awayTeam)awayQ.sum() else homeQ.sum()
-        fun player(team:String,role:String):UsagePlayer {
-            val pool=usage.getValue(team).players
+        val metrics=mapOf(game.awayTeam to awayMetrics,game.homeTeam to homeMetrics)
+        fun opponent(team:String)=if(team==game.awayTeam)game.homeTeam else game.awayTeam
+        fun score(team:String)= if(team==game.awayTeam)awayQ.sum()+awayOt else homeQ.sum()+homeOt
+        fun choose(team:String,role:String):UsagePlayer {
             val starter=starters.getValue(team)
+            val pool=usage.getValue(team).players
             val eligible=when(role){
                 "QB"->listOf(starter)
                 "RUSH"->pool.filter{it.carries>0 && (it.position!="QB" || it.id==starter.id)}
                 else->pool.filter{it.targets>0}
             }
-            if(eligible.isEmpty())return UsagePlayer("fallback:$team:$role",when(role){
-                "QB"->"QB sin datos";"RUSH"->"Corredor sin datos";else->"Receptor sin datos"
-            },when(role){"QB"->"QB";"RUSH"->"RB";else->"WR"},team)
-            fun weight(p:UsagePlayer)=when(role){"QB"->p.passAttempts;"RUSH"->p.carries;else->p.targets}.coerceAtLeast(0.1)
-            val total=eligible.sumOf{weight(it)}
-            var draw=rng.nextDouble()*total
-            return eligible.firstOrNull{draw-=weight(it);draw<=0.0} ?: eligible.last()
+            if(eligible.isEmpty())return UsagePlayer("fallback:$team:$role",
+                if(role=="TARGET")"Receptor sin datos" else "Corredor sin datos",
+                if(role=="TARGET")"WR" else "RB",team)
+            fun weight(p:UsagePlayer)=when(role){"QB"->p.passAttempts;"RUSH"->p.carries;else->p.targets}.coerceAtLeast(.1)
+            var draw=rng.nextDouble()*eligible.sumOf{weight(it)}
+            return eligible.firstOrNull{draw-=weight(it);draw<=0} ?: eligible.last()
         }
-        fun record(p:UsagePlayer):SimPlayerStats = stats.getOrPut("${p.team}|${p.id}"){
+        fun playerStats(p:UsagePlayer)=stats.getOrPut("${p.team}|${p.id}"){
             SimPlayerStats(p.team,p.name,p.position)
         }
-        fun add(kind:String,text:String,actor:String,secondary:String,yards:Int,points:Int,
-                down:Int,dist:Int,from:Int,to:Int,clock:Int){
-            val q=((3600-clock)/900).coerceIn(0,3)
-            if(points>0){if(offense==game.awayTeam)awayQ[q]+=points else homeQ[q]+=points}
-            plays+=SimPlay(plays.size+1,drive,offense,q+1,(clock-1).coerceAtLeast(0)%900,
-                down,dist,from,to,kind,text,actor,secondary,yards,points,awayQ.sum(),homeQ.sum())
+        // Prior sample sizes prevent a rookie QB or one explosive run from dominating its matchup.
+        fun completionRate(qb:UsagePlayer,offense:String):Double {
+            val sample=qb.passAttempts
+            val prior=.62
+            val priorWeight=85.0
+            val estimated=if(qb.completions<=0.0 && qb.passingYards<=0.0)prior
+                else (qb.completions+prior*priorWeight)/(sample+priorWeight)
+            val opp=metrics[opponent(offense)]
+            val defensiveAdjustment=((opp?.defEpaAllowedPerPlay ?: 0.0)*.12).coerceIn(-.04,.04)
+            return (estimated+defensiveAdjustment+
+                (calibration.factor(offense,game)-1.0)*.12).coerceIn(.48,.72)
         }
-        // Approximate dropback tendency from prior-week passing + rushing usage.
-        fun passShare(team:String):Double {
-            val x=usage.getValue(team).players
-            // Play-call rate is team-level; use the most recent QB usage in team data,
-            // while only the selected starter actually throws on the simulated field.
-            val qb=x.filter{it.position=="QB"}.sumOf{it.passAttempts}
-            val rush=x.sumOf{it.carries}
-            return if(qb+rush>20.0) (qb/(qb+rush)).coerceIn(.43,.76) else .58
+        fun rushEfficiency(runner:UsagePlayer,offense:String):Double {
+            val priorYpc=4.35
+            val posterior=if(runner.rushingYards<=0.0)priorYpc
+                else (runner.rushingYards+priorYpc*60)/(runner.carries+60)
+            val m=metrics[offense];val opp=metrics[opponent(offense)]
+            val epa=((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0)).coerceIn(-.3,.3)
+            return ((posterior/priorYpc)*(1+epa*.20)*
+                (1.0+(calibration.factor(offense,game)-1.0)*.30)).coerceIn(.74,1.28)
         }
-        while(remaining>0 && plays.size<240){
+        fun catchEfficiency(target:UsagePlayer,qb:UsagePlayer):Double {
+            val ypr=(target.receivingYards+12.0*18)/(target.receptions+18)
+            val quarterbackYpa=if(qb.passingYards<=0.0)6.8
+                else (qb.passingYards+6.8*95)/(qb.passAttempts+95)
+            return ((ypr/12.0)*.65+(quarterbackYpa/6.8)*.35).coerceIn(.70,1.40)
+        }
+        fun passShare(team:String,remaining:Int):Double {
+            val players=usage.getValue(team).players
+            val pass=players.filter{it.position=="QB"}.sumOf{it.passAttempts}
+            val rush=players.sumOf{it.carries}
+            // Historical QB injuries remove passing volume: shrink toward NFL prior, not to 100% rushing.
+            val historical=if(pass+rush>12)pass/(pass+rush) else .58
+            val baseline=(historical*.35+.58*.65).coerceIn(.49,.69)
+            val deficit=score(opponent(team))-score(team)
+            val gameScript=when{
+                remaining<=480 && deficit>=8 -> .13
+                remaining<=900 && deficit>=3 -> .07
+                remaining<=700 && deficit<=-10 -> -.09
+                else -> 0.0
+            }
+            return (baseline+gameScript).coerceIn(.40,.81)
+        }
+        fun drawRushYards():Int {
+            val z=rng.nextInt(1000)
+            return when(z){
+                in 0..189 -> -(rng.nextInt(4))    // negative or stopped
+                in 190..549 -> 1+rng.nextInt(4)
+                in 550..869 -> 5+rng.nextInt(4)
+                in 870..979 -> 9+rng.nextInt(7)
+                else -> 16+rng.nextInt(19)
+            }
+        }
+        fun drawPassYards():Int {
+            val z=rng.nextInt(1000)
+            return when(z){
+                in 0..279 -> 1+rng.nextInt(5)
+                in 280..749 -> 6+rng.nextInt(8)
+                in 750..949 -> 14+rng.nextInt(11)
+                else -> 25+rng.nextInt(25)
+            }
+        }
+        fun snapTime(kind:String):Int{
+            val elapsed=if(kind=="INCOMPLETE"||kind=="INT") 8+rng.nextInt(11)
+                else if(kind=="KICKOFF")5+rng.nextInt(4)
+                else 23+rng.nextInt(19)
+            return (elapsed*calibration.clockFactor).toInt().coerceAtLeast(1)
+        }
+        var remaining=3600
+        var overtimeRemaining=600
+        var isOvertime=false
+        var drive=0
+        var possession=if(rng.nextBoolean())game.awayTeam else game.homeTeam
+        var spot=35
+        var kickoffNext=true
+        val openingReceiver=possession
+        val secondHalfReceiver=opponent(openingReceiver)
+        var halftimeDone=false
+        var overtimePlayed=false
+        var otPossessions=0
+
+        fun append(team:String,kind:String,description:String,actor:String="",receiver:String="",
+                   from:Int=spot,to:Int=spot,yards:Int=0,points:Int=0,
+                   down:Int=1,distance:Int=10,clockAtSnap:Int=remaining,driveId:Int=drive){
+            val quarter=if(isOvertime)5 else if(kind=="HALFTIME")2 else when {
+                clockAtSnap>2700->1;clockAtSnap>1800->2;clockAtSnap>900->3;else->4
+            }
+            val clock=if(isOvertime)clockAtSnap.coerceIn(0,600)
+                else (clockAtSnap-((4-quarter)*900)).coerceIn(0,900)
+            if(points>0) {
+                if(isOvertime){if(team==game.awayTeam)awayOt+=points else homeOt+=points}
+                else{if(team==game.awayTeam)awayQ[quarter-1]+=points else homeQ[quarter-1]+=points}
+            }
+            plays.add(SimPlay(plays.size+1,driveId,team,quarter,clock,down,distance,
+                from,to,kind,description,actor,receiver,yards,points,score(game.awayTeam),score(game.homeTeam)))
+        }
+        fun kickoff(team:String,atClock:Int){
+            val returnYard=if(rng.nextDouble()<.55)35 else 23+rng.nextInt(17)
+            spot=returnYard
+            append(team,"KICKOFF","Recepción de kickoff; balón en la yarda $returnYard",
+                from=0,to=returnYard,clockAtSnap=atClock,driveId=drive+1)
+            if(isOvertime)overtimeRemaining=(overtimeRemaining-snapTime("KICKOFF")).coerceAtLeast(0)
+            else remaining=(remaining-snapTime("KICKOFF")).coerceAtLeast(if(!halftimeDone)1800 else 0)
+        }
+        fun extraPoint(team:String,clockAtSnap:Int){
+            // Walk-off TD after each team has had an opening chance requires no try.
+            if(isOvertime && otPossessions>=1 && score(team)>score(opponent(team)))return
+            val twoPoint= !isOvertime && remaining<300 && (score(opponent(team))-score(team)) in setOf(1,2,5,8)
+            val success=rng.nextDouble() < if(twoPoint).46 else .945
+            val kind=if(twoPoint)if(success)"TWO_GOOD" else "TWO_FAILED"
+                        else if(success)"XP_GOOD" else "XP_MISSED"
+            append(team,kind,if(twoPoint)"Intento de dos puntos: ${if(success)"convertido" else "fallado"}"
+                    else "Punto extra ${if(success)"convertido" else "fallado"}",points=if(success)if(twoPoint)2 else 1 else 0,
+                    clockAtSnap=clockAtSnap)
+        }
+        fun markHalftime(){
+            append(possession,"HALFTIME","Descanso: termina la primera mitad",clockAtSnap=1800)
+            // If a late Q2 kickoff was returned as time expired, its provisional
+            // next-drive id cannot be reused by the mandatory Q3 kickoff.
+            if(plays.lastOrNull()?.kind=="HALFTIME" && plays.getOrNull(plays.lastIndex-1)?.kind=="KICKOFF")drive++
+            halftimeDone=true
+            remaining=1800
+            possession=secondHalfReceiver
+            kickoffNext=true
+            spot=35
+        }
+        fun runPossession():String {
             drive++
-            drivePlays=0
-            var yard=if(lastWasTurnover)lastSpot.coerceIn(20,85) else (22+rng.nextInt(18))
-            lastWasTurnover=false
             var down=1
-            var dist=10
-            val m=teamMetrics[offense]
-            val opp=teamMetrics[opponent(offense)]
-            val scoringFactor=calibration.factor(offense,game)
-            val adjustment=(((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0))
-                + (scoringFactor-1.0)*.40).coerceIn(-0.3,0.3)
-            val passRate=passShare(offense)
+            var dist=min(10,100-spot)
+            var playsInDrive=0
+            var nextSpot=35
+            var ending="CLOCK"
             var ended=false
-            while(!ended && remaining>0 && plays.size<240 && drivePlays<16){
-                drivePlays++
-                val before=remaining
-                val from=yard
+            val team=possession
+            val opponentTeam=opponent(team)
+            val m=metrics[team]
+            val opp=metrics[opponentTeam]
+            val epa=((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0)).coerceIn(-.3,.3)
+            while(!ended && (if(isOvertime)overtimeRemaining else remaining)>0
+                && (isOvertime || halftimeDone || remaining>1800)
+                && plays.size<250 && playsInDrive<18){
+                playsInDrive++
+                val before=if(isOvertime)overtimeRemaining else remaining
+                val from=spot
                 val d=down
                 val needed=dist
-                var pts=0
-                var gained=0
-                var type=""
-                var description=""
+                var kind=""
+                var desc=""
                 var actor=""
-                var secondary=""
+                var receiver=""
+                var yards=0
+                var points=0
                 var turnover=false
-                val qb=player(offense,"QB")
-                if(down==4 || drivePlays==16){
-                    if(yard>=62){
-                        val chance=(.52+(yard-62)*.014).coerceIn(.5,.96)
-                        if(rng.nextDouble()<chance){
-                            pts=3
-                            type="FG"
-                            description="Gol de campo convertido"
+                val qb=choose(team,"QB")
+                if(down==4 || playsInDrive==18){
+                    if(spot>=62){
+                        val kickDistance=100-spot+17
+                        val fgChance=when{
+                            kickDistance<=35->.96
+                            kickDistance<=45->.87
+                            kickDistance<=55->.70
+                            kickDistance<=60->.47
+                            else->.20
+                        }
+                        if(rng.nextDouble()<fgChance){
+                            kind="FG";points=3;desc="Gol de campo convertido desde $kickDistance yardas";kickoffNext=true
                         }else{
-                            type="FG_FALLADO"
-                            description="Gol de campo fallado"
+                            kind="FG_FALLADO";desc="Gol de campo fallado desde $kickDistance yardas"
+                            nextSpot=(100-spot+7).coerceIn(20,95)
                         }
                     }else{
-                        type="PUNT"
-                        description="Despeje en cuarto down"
+                        kind="PUNT";desc="Despeje en cuarto down"
+                        val puntSpot=(100-spot-(37+rng.nextInt(17))).coerceAtLeast(20)
+                        nextSpot=puntSpot.coerceIn(20,95)
                     }
-                    remaining-= (8*calibration.clockFactor).toInt().coerceAtLeast(4)
-                    ended=true
-                }else if(rng.nextDouble()<passRate){
-                    val target=player(offense,"TARGET")
-                    actor=qb.name
-                    secondary=target.name
-                    val qbstats=record(qb)
-                    val rcstats=record(target)
-                    qbstats.passAttempts++
-                    rcstats.targets++
+                    ended=true;ending=kind
+                }else if(rng.nextDouble()<passShare(team,remaining)){
+                    val target=choose(team,"TARGET")
+                    actor=qb.name;receiver=target.name
+                    val qbstats=playerStats(qb);val rcstats=playerStats(target)
+                    qbstats.passAttempts++;rcstats.targets++
+                    val completion=completionRate(qb,team)
                     val roll=rng.nextDouble()
-                    val completion=(.60+((m?.successRate ?: .43)-.43)*.25+adjustment*.20).coerceIn(.49,.68)
                     when {
-                        roll<.04 -> {
-                            type="SACK"; gained=-(2+rng.nextInt(7))
-                            description="Captura a ${qb.name}"
-                            // Sacks are NOT official passing attempts / targeted passes.
-                            qbstats.passAttempts--;rcstats.targets--
-                            secondary=""
+                        roll<.038->{
+                            kind="SACK";yards=-(2+rng.nextInt(7));desc="Captura a ${qb.name}"
+                            qbstats.passAttempts--;rcstats.targets--;receiver=""
                         }
-                        roll<.055 -> {
-                            type="INT"; turnover=true
-                            qbstats.interceptions++
-                            description="Intercepción en pase de ${qb.name}"
+                        roll<.057->{
+                            kind="INT";turnover=true;qbstats.interceptions++
+                            desc="Intercepción en pase de ${qb.name}"
                         }
-                        roll<completion -> {
-                            type="PASS"; qbstats.completions++;rcstats.receptions++
-                            gained=when(rng.nextInt(100)){
-                                in 0..19->1+rng.nextInt(4)
-                                in 20..74->5+rng.nextInt(8)
-                                in 75..95->13+rng.nextInt(12)
-                                else->25+rng.nextInt(20)
-                            }
-                            gained=(gained*(1.0+adjustment*.65)).toInt().coerceIn(1,100-yard)
-                            qbstats.passYards+=gained
-                            rcstats.receivingYards+=gained
-                            description="${qb.name} → ${target.name} · +$gained yd"
+                        roll<completion->{
+                            kind="PASS";qbstats.completions++;rcstats.receptions++
+                            yards=(drawPassYards()*catchEfficiency(target,qb)*(1.0+epa*.25)).toInt().coerceIn(1,100-spot)
+                            qbstats.passYards+=yards;rcstats.receivingYards+=yards
+                            desc="${qb.name} → ${target.name} · +$yards yd"
                         }
-                        else -> {
-                            type="INCOMPLETE"
-                            description="Pase incompleto de ${qb.name} a ${target.name}"
-                        }
+                        else->{kind="INCOMPLETE";desc="Pase incompleto de ${qb.name} a ${target.name}"}
                     }
-                    remaining-=if(type=="INCOMPLETE") 10+rng.nextInt(12) else 23+rng.nextInt(19)
-                    if(type=="SACK")remaining-=0
                 }else{
-                    val runner=player(offense,"RUSH")
-                    actor=runner.name
-                    val line=record(runner)
+                    val runner=choose(team,"RUSH")
+                    actor=runner.name;val line=playerStats(runner)
                     line.rushAttempts++
-                    val z=rng.nextInt(100)
-                    gained=when(z){
-                        in 0..12 -> -(1+rng.nextInt(3))
-                        in 13..74 -> 2+rng.nextInt(6)
-                        in 75..96 -> 8+rng.nextInt(8)
-                        else -> 16+rng.nextInt(14)
+                    val raw=drawRushYards()
+                    yards=if(raw<=0)raw else (raw*rushEfficiency(runner,team)).toInt().coerceAtLeast(1)
+                    yards=yards.coerceIn(-10,100-spot)
+                    line.rushYards+=yards
+                    kind="RUN"
+                    desc="Acarreo de ${runner.name} · ${if(yards>=0)"+" else ""}$yards yd"
+                    if(rng.nextDouble()<.007 && spot+yards<100){
+                        kind="FUMBLE";turnover=true;desc="Balón perdido por ${runner.name}"
                     }
-                    gained=(gained*(1.0+adjustment*.6)).toInt().coerceAtMost(100-yard)
-                    line.rushYards+=gained
-                    type="RUN"
-                    description="Acarreo de ${runner.name} · ${if(gained>=0)"+" else ""}$gained yd"
-                    if(rng.nextDouble()<.008){type="FUMBLE";turnover=true;description="Balón perdido por ${runner.name}"}
-                    remaining-=24+rng.nextInt(18)
                 }
-                // Drive pace is calibrated from eligible prior-week drive observations.
-                // Earlier play-time decrement already applied, adjust the actual elapsed time.
-                val spent=before-remaining
-                remaining=max(0,before-(spent*calibration.clockFactor).toInt().coerceAtLeast(1))
-                yard=(yard+gained).coerceIn(1,105)
-                if(!ended && !turnover && yard>=100){
-                    pts=if(rng.nextDouble()<.94)7 else 6
-                    type=if(type=="RUN")"RUSH_TD" else "PASS_TD"
-                    description+=" · TOUCHDOWN ($pts pts)"
-                    val key=if(type=="RUSH_TD")actor else secondary
-                    if(type=="RUSH_TD"){
-                        stats.values.firstOrNull{it.team==offense&&it.name==key}?.rushingTds =
-                            (stats.values.firstOrNull{it.team==offense&&it.name==key}?.rushingTds ?: 0)+1
-                    }else{
-                        record(qb).passingTds++
-                        stats.values.firstOrNull{it.team==offense&&it.name==key}?.receivingTds =
-                            (stats.values.firstOrNull{it.team==offense&&it.name==key}?.receivingTds ?: 0)+1
+                val elapsed=snapTime(kind)
+                if(isOvertime)overtimeRemaining=(overtimeRemaining-elapsed).coerceAtLeast(0)
+                else remaining=(remaining-elapsed).coerceAtLeast(if(!halftimeDone)1800 else 0)
+                spot=(spot+yards).coerceIn(1,100)
+                if(!ended && !turnover && spot>=100){
+                    kind=if(kind=="RUN")"RUSH_TD" else "PASS_TD"
+                    points=6;desc+=" · TOUCHDOWN"
+                    if(kind=="RUSH_TD")playerStats(chooseTeamPlayer(team,actor,usage,starters)).rushingTds++
+                    else{
+                        playerStats(qb).passingTds++
+                        playerStats(chooseTeamPlayer(team,receiver,usage,starters)).receivingTds++
                     }
-                    ended=true
+                    ended=true;ending="TD";kickoffNext=true
                 }
-                add(type,description,actor,secondary,gained,pts,d,needed,from,yard,before)
-                if(turnover){
-                    ended=true
-                    lastWasTurnover=true
-                    lastSpot=(100-yard).coerceIn(15,85)
-                }
+                append(team,kind,desc,actor,receiver,from,spot,yards,points,d,needed,before)
+                if(ending=="TD")extraPoint(team,before)
+                if(turnover){ended=true;ending="TURNOVER";nextSpot=(100-spot).coerceIn(1,99)}
                 if(!ended){
-                    if(gained>=dist){down=1;dist=min(10,100-yard)}
-                    else{down++;dist=(dist-gained).coerceIn(1,35)}
+                    if(yards>=dist){down=1;dist=min(10,100-spot)}
+                    else{down++;dist=(dist-yards).coerceIn(1,35)}
                 }
             }
-            offense=opponent(offense)
+            // A kickoff following a score has no hidden change of field position.
+            if(!kickoffNext)spot=nextSpot
+            return ending
         }
-        return GameSim(game.gameId,game.season,game.week,game.awayTeam,game.homeTeam,seed,
+        // Choose by name only for updating the already-selected actor, never a new random player.
+        while(remaining>0 && plays.size<235){
+            if(!halftimeDone && remaining<=1800){markHalftime();continue}
+            if(kickoffNext){kickoff(possession,remaining);kickoffNext=false}
+            if(!halftimeDone && remaining<=1800){markHalftime();continue}
+            if(remaining<=0)break
+            runPossession()
+            if(!halftimeDone && remaining<=1800){markHalftime();continue}
+            possession=opponent(possession)
+        }
+        if(awayQ.sum()==homeQ.sum() && plays.size<240){
+            overtimePlayed=true;isOvertime=true;overtimeRemaining=600
+            possession=if(rng.nextBoolean())game.awayTeam else game.homeTeam
+            otPossessions=0
+            kickoffNext=true
+            append(possession,"OVERTIME_START","Inicio de tiempo extra: periodo máximo de 10 minutos",
+                clockAtSnap=overtimeRemaining)
+            while(overtimeRemaining>0 && plays.size<250){
+                if(kickoffNext){kickoff(possession,overtimeRemaining);kickoffNext=false}
+                if(overtimeRemaining<=0)break
+                runPossession()
+                otPossessions++
+                if(otPossessions>=2 && score(game.awayTeam)!=score(game.homeTeam))break
+                possession=opponent(possession)
+            }
+        }
+        val result=GameSim(game.gameId,game.season,game.week,game.awayTeam,game.homeTeam,seed,
             awayUsage.throughWeek,homeUsage.throughWeek,awayUsage.players.size,homeUsage.players.size,
             plays,stats.values.toList(),
-            listOf(game.awayTeam,game.homeTeam).flatMap { team ->
-                val inputs=usage.getValue(team).players
-                val starter=starters.getValue(team)
-                if(inputs.any{it.id==starter.id})inputs else inputs+starter
-            },awayQ.toList(),homeQ.toList(),lineup,calibration)
+            listOf(game.awayTeam,game.homeTeam).flatMap{team->
+                val p=usage.getValue(team).players;val qb=starters.getValue(team)
+                if(p.any{it.id==qb.id})p else p+qb
+            },awayQ.toList(),homeQ.toList(),lineup,calibration,awayOt,homeOt,overtimePlayed)
+        val errors=SimcastIntegrity.check(result)
+        return result.copy(integrityErrors=errors)
+    }
+    private fun chooseTeamPlayer(team:String,name:String,usage:Map<String,TeamUsage>,starters:Map<String,UsagePlayer>):UsagePlayer {
+        return usage.getValue(team).players.firstOrNull{it.name==name}
+            ?:starters.getValue(team).takeIf{it.name==name}
+            ?:UsagePlayer("fallback:$team:$name",name,"WR",team)
     }
 }

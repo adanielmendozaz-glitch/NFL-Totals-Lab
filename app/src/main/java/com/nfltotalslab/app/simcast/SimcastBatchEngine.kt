@@ -29,7 +29,8 @@ data class BatchReport(
     val overRate:Double?,val underRate:Double?,val pushRate:Double?,
     val totalHistogram:List<Pair<Int,Int>>,val mostCommonScores:List<ScoreFrequency>,
     val teamLines:List<BatchTeamLine>,val playerLines:List<BatchPlayerLine>,
-    val replay:GameSim, val inputSignature:String=""
+    val replay:GameSim, val inputSignature:String="",
+    val overtimeRate:Double=0.0, val regulationTieRate:Double=0.0
 )
 
 data class SimcastBatchAudit(
@@ -54,12 +55,15 @@ class SimcastBatchEngine(private val engine:PlayerUsageDriveEngine=PlayerUsageDr
         val playerYards=linkedMapOf<String,Triple<MutableList<Int>,MutableList<Int>,MutableList<Int>>>()
         val playerOther=linkedMapOf<String,DoubleArray>()
         val playerLabels=linkedMapOf<String,Triple<String,String,String>>()
-        var awin=0;var hwin=0;var tie=0;var over=0;var under=0;var push=0
+        var awin=0;var hwin=0;var tie=0;var over=0;var under=0;var push=0;var otCount=0
         var replay:GameSim?=null
         for(i in 0 until count){
             if(!shouldContinue())throw java.util.concurrent.CancellationException("Lote cancelado")
             val s=engine.simulate(game,away,home,awayMetrics,homeMetrics,seed xor ((i+1)*104729),lineup,calibration)
             if(replay==null)replay=s
+            // Never count rule-invalid runs as Monte Carlo outcomes.
+            check(s.integrityErrors.isEmpty()) { "Simcast invalid: ${s.integrityErrors.joinToString()}" }
+            if(s.overtimePlayed)otCount++
             val ap=s.awayFinal;val hp=s.homeFinal;val total=ap+hp
             totals[i]=total;awayPoints[i]=ap;homePoints[i]=hp
             scores[ap to hp]=(scores[ap to hp] ?: 0)+1
@@ -70,7 +74,8 @@ class SimcastBatchEngine(private val engine:PlayerUsageDriveEngine=PlayerUsageDr
             for(team in listOf(game.awayTeam,game.homeTeam)){
                 val p=s.plays.filter{it.offense==team}
                 val a=teamAgg.getOrPut(team){DoubleArray(7)}
-                a[0]+=p.map{it.drive}.distinct().size.toDouble()
+                a[0]+=p.filter{it.kind in setOf("RUN","RUSH_TD","PASS","PASS_TD", "INCOMPLETE",
+                    "SACK","INT","FUMBLE","FG","FG_FALLADO","PUNT")}.map{it.drive}.distinct().size.toDouble()
                 a[1]+=p.count{it.kind in setOf("PASS","PASS_TD","INCOMPLETE","INT")}.toDouble()
                 a[2]+=p.count{it.kind in setOf("RUN","RUSH_TD","FUMBLE")}.toDouble()
                 a[3]+=p.count{it.kind=="PASS_TD"||it.kind=="RUSH_TD"}.toDouble()
@@ -116,6 +121,6 @@ class SimcastBatchEngine(private val engine:PlayerUsageDriveEngine=PlayerUsageDr
             if(game.totalLine!=null)push.toDouble()/count else null,
             histogram.toSortedMap().map{it.key to it.value},
             scores.entries.sortedByDescending{it.value}.take(10).map{ScoreFrequency(it.key.first,it.key.second,it.value)},
-            teamLines,playerLines,replay!!,inputSignature)
+            teamLines,playerLines,replay!!,inputSignature,otCount.toDouble()/count,otCount.toDouble()/count)
     }
 }

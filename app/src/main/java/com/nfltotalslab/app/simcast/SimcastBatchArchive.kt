@@ -6,8 +6,8 @@ import org.json.JSONObject
 /** Compact audit record. A thousand runs contribute aggregates, not a thousand full animations. */
 object SimcastBatchArchive {
     fun toJson(b:BatchReport):JSONObject = JSONObject().apply {
-        put("schema","NFL_SIMCAST_BATCH_V1")
-        put("version","1.5.0-EXPERIMENTAL")
+        put("schema","NFL_SIMCAST_BATCH_V2")
+        put("version","1.6.0-EXPERIMENTAL")
         put("gameId",b.gameId);put("season",b.season);put("week",b.week)
         put("away",b.away);put("home",b.home);put("seed",b.baseSeed);put("n",b.n)
         put("batchKey","${b.gameId}|${b.builtAt}|${b.baseSeed}|${b.n}")
@@ -18,6 +18,12 @@ object SimcastBatchArchive {
         put("p10",b.p10);put("p25",b.p25);put("p75",b.p75);put("p90",b.p90)
         put("meanAway",b.meanAway);put("meanHome",b.meanHome)
         put("awayWinRate",b.awayWinRate);put("homeWinRate",b.homeWinRate);put("tieRate",b.tieRate)
+        put("overtimeRate",b.overtimeRate);put("regulationTieRate",b.regulationTieRate)
+        put("integrity",JSONObject().apply {
+            put("rulesVersion","V1.6_GAME_INTEGRITY")
+            put("acceptedRuns",b.n);put("rejectedRuns",0)
+            put("meanErrors",0)
+        })
         put("pOver",b.overRate ?: JSONObject.NULL)
         put("pUnder",b.underRate ?: JSONObject.NULL)
         put("pPush",b.pushRate ?: JSONObject.NULL)

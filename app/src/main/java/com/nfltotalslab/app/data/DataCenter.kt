@@ -207,7 +207,9 @@ class DataCenter(private val db:DbHelper){
         val maxWeek=minOf(snap.throughWeek,game.week-1)
         if(maxWeek<1)return TeamUsage(team,0,emptyList())
         data class Acc(val id:String, val name:String, val position:String, val last:Int,
-                       var attempts:Double, var carries:Double, var targets:Double)
+                       var attempts:Double, var carries:Double, var targets:Double,
+                       var completions:Double, var passingYards:Double, var rushingYards:Double,
+                       var receptions:Double, var receivingYards:Double)
         val users=mutableMapOf<String,Acc>()
         var latest=0
         db.readableDatabase.rawQuery(
@@ -233,14 +235,26 @@ class DataCenter(private val db:DbHelper){
                 val a=stat("attempts","passing_attempts")*weight
                 val r=stat("carries","rushing_attempts")*weight
                 val t=stat("targets")*weight
+                // nflverse weekly box-score fields are used ONLY for efficiency estimates,
+                // regularized in PlayerUsageDriveEngine. No same-week rows are read.
+                val comp=stat("completions","passing_completions")*weight
+                val py=stat("passing_yards")*weight
+                val ry=stat("rushing_yards")*weight
+                val rec=stat("receptions")*weight
+                val recY=stat("receiving_yards")*weight
                 val prev=users[id]
-                if(prev==null)users[id]=Acc(id,name,position,week,a,r,t)
-                else{prev.attempts+=a;prev.carries+=r;prev.targets+=t}
+                if(prev==null)users[id]=Acc(id,name,position,week,a,r,t,comp,py,ry,rec,recY)
+                else{
+                    prev.attempts+=a;prev.carries+=r;prev.targets+=t
+                    prev.completions+=comp;prev.passingYards+=py;prev.rushingYards+=ry
+                    prev.receptions+=rec;prev.receivingYards+=recY
+                }
             }
         }
         return TeamUsage(team,latest,users.values
             .filter{it.attempts>0.0 || it.carries>0.0 || it.targets>0.0}
-            .map{UsagePlayer(it.id,it.name,it.position,team,it.attempts,it.carries,it.targets)})
+            .map{UsagePlayer(it.id,it.name,it.position,team,it.attempts,it.carries,it.targets,
+                it.completions,it.passingYards,it.rushingYards,it.receptions,it.receivingYards)})
     }
 
     fun exportHistory(season:Int):JSONArray = JSONArray().apply{

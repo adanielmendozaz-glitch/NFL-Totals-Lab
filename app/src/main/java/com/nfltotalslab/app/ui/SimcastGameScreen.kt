@@ -222,7 +222,7 @@ fun SimcastGameScreen(
         item {
             Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
                 Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                    Text("SIMULATION CENTER · V1.5",color=scAmber,fontSize=14.sp,fontWeight=FontWeight.Black)
+                    Text("SIMULATION CENTER · V1.6",color=scAmber,fontSize=14.sp,fontWeight=FontWeight.Black)
                     Text(if(audit.settled==0)"Auditor histórico: aún no hay lotes PRE-GAME con resultado final."
                          else "AUDITOR REAL · ${audit.settled} juegos · MAE ${"%.1f".format(audit.meanAbsoluteError)} puntos · Brier ${audit.brier?.let{ "%.3f".format(it) } ?: "—"} (${audit.linesGraded} líneas)",
                          color=scMuted,fontSize=10.sp)
@@ -281,6 +281,7 @@ fun SimcastGameScreen(
                 Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
                         Text("AUDITOR DE DRIVES Y ANOTACIONES",color=scAmber,fontWeight=FontWeight.Black,fontSize=13.sp)
+                        Text("✓ INTEGRIDAD: ${b.n} partidos validados · OT ${"%.1f".format(100*b.overtimeRate)}% · Empate final ${"%.1f".format(100*b.tieRate)}%",color=scGreen,fontSize=10.sp)
                         b.teamLines.forEach{t->
                             Text(t.team,color=scText,fontSize=12.sp,fontWeight=FontWeight.Bold)
                             Text("Drives ${"%.1f".format(t.meanDrives)} · Pases ${"%.1f".format(t.meanPasses)} · Acarreos ${"%.1f".format(t.meanRuns)}",color=scMuted,fontSize=11.sp)
@@ -326,7 +327,7 @@ fun SimcastGameScreen(
                         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
                             ScoreCell(s.away,play?.awayScore ?: 0)
                             Column(horizontalAlignment=Alignment.CenterHorizontally){
-                                Text("Q${play?.quarter ?: 1}  ·  ${showClock(play?.clock ?: 900)}",color=scAmber,fontSize=12.sp,fontWeight=FontWeight.Bold)
+                                Text("${if(play?.quarter==5)"OT" else "Q${play?.quarter ?: 1}"}  ·  ${showClock(play?.clock ?: 900)}",color=scAmber,fontSize=12.sp,fontWeight=FontWeight.Bold)
                                 Text("POSESIÓN: ${play?.offense ?: "—"}",color=scMuted,fontSize=10.sp)
                             }
                             ScoreCell(s.home,play?.homeScore ?: 0)
@@ -467,10 +468,11 @@ fun SimcastGameScreen(
                         Row(horizontalArrangement=Arrangement.spacedBy(5.dp)){
                             Text("Equipo",Modifier.weight(1.4f),color=scMuted,fontSize=11.sp)
                             (1..4).forEach{Text("Q$it",Modifier.weight(1f),color=scMuted,fontSize=11.sp)}
+                            if(s.overtimePlayed) Text("OT",Modifier.weight(1f),color=scAmber,fontSize=11.sp)
                             Text("TOT",Modifier.weight(1f),color=scText,fontSize=11.sp)
                         }
-                        Row(Modifier.fillMaxWidth()) { QuarterLine(s.away,s.awayQuarters) }
-                        Row(Modifier.fillMaxWidth()) { QuarterLine(s.home,s.homeQuarters) }
+                        Row(Modifier.fillMaxWidth()) { QuarterLine(s.away,s.awayQuarters,s.awayOvertime,s.overtimePlayed) }
+                        Row(Modifier.fillMaxWidth()) { QuarterLine(s.home,s.homeQuarters,s.homeOvertime,s.overtimePlayed) }
                         HorizontalDivider(color=Color(0xff304659))
                         listOf(s.away,s.home).forEach{team->
                             val teamPlays=s.plays.filter{it.offense==team}
@@ -478,7 +480,8 @@ fun SimcastGameScreen(
                             val passes=teamPlays.count{it.kind=="PASS"||it.kind=="PASS_TD"||it.kind=="INCOMPLETE"||it.kind=="INT"}
                             val rushYards=s.players.filter{it.team==team}.sumOf{it.rushYards}
                             val passYards=s.players.filter{it.team==team}.sumOf{it.passYards}
-                            val drives=teamPlays.map{it.drive}.distinct().size
+                            val drives=teamPlays.filter{it.kind in setOf("RUN","RUSH_TD","PASS","PASS_TD", "INCOMPLETE",
+                                "SACK","INT","FUMBLE","FG","FG_FALLADO","PUNT")}.map{it.drive}.distinct().size
                             Text("$team · $drives drives · $passes pases · $runs acarreos · ${passYards+max(0,rushYards)} yardas of. (sin sacks)",color=scMuted,fontSize=10.sp)
                         }
                     }
@@ -524,7 +527,8 @@ fun SimcastGameScreen(
                 }
                 exportStatus?.let{Text(it,color=scGreen,fontSize=11.sp)}
                 Text("Alineaciones: ${s.away} = ${s.lineup.away.startingQb.ifBlank { "QB por historial (no confirmado)" }}; ${s.home} = ${s.lineup.home.startingQb.ifBlank { "QB por historial (no confirmado)" }}.",color=scMuted,fontSize=10.sp)
-                Text("Se guardan hasta 3 simulaciones recientes por partido para Data Vault V7. Una sola corrida NO produce probabilidad O/U.",color=scMuted,fontSize=11.sp)
+                Text("Integridad NFL V1.6: ${if(s.integrityErrors.isEmpty())"sin infracciones detectadas" else s.integrityErrors.joinToString()} · Medio tiempo, patadas, tries y OT auditable.",color=if(s.integrityErrors.isEmpty())scGreen else scAmber,fontSize=10.sp)
+                Text("Se guardan hasta 3 simulaciones recientes por partido para Data Vault. Una sola corrida NO produce probabilidad O/U.",color=scMuted,fontSize=11.sp)
                 if(s.awayUsageWeek==0 || s.homeUsageWeek==0){
                     Text("AVISO: uno o ambos equipos carecen de historial previo de Player Weekly. Los roles faltantes usan jugadores genéricos.",color=scAmber,fontSize=11.sp)
                 }
@@ -542,9 +546,10 @@ private fun ScoreCell(team:String,score:Int){
     }
 }
 @Composable
-private fun RowScope.QuarterLine(team:String,points:List<Int>){
+private fun RowScope.QuarterLine(team:String,points:List<Int>,ot:Int=0,showOt:Boolean=false){
     Text(team,Modifier.weight(1.4f),color=scText,fontSize=11.sp)
     points.forEach{Text("$it",Modifier.weight(1f),color=scText,fontSize=11.sp)}
-    Text("${points.sum()}",Modifier.weight(1f),color=scAmber,fontSize=11.sp,fontWeight=FontWeight.Bold)
+    if(showOt) Text("$ot",Modifier.weight(1f),color=scAmber,fontSize=11.sp)
+    Text("${points.sum()+ot}",Modifier.weight(1f),color=scAmber,fontSize=11.sp,fontWeight=FontWeight.Bold)
 }
 private fun showClock(seconds:Int):String="%02d:%02d".format(seconds/60,seconds%60)

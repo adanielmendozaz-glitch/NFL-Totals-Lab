@@ -6,7 +6,7 @@ import org.json.JSONObject
 /** Portable deterministic simulation report; includes player lines and full events. */
 object SimcastArchive {
     fun toJson(s:GameSim):JSONObject = JSONObject().apply{
-        put("schema","NFL_SIMCAST_PLAYER_USAGE_V1")
+        put("schema","NFL_SIMCAST_PLAYER_USAGE_V2")
         put("model","Experimental down-distance / prior-week player usage; NOT official Core probability")
         put("gameId",s.gameId);put("season",s.season);put("week",s.week)
         put("away",s.away);put("home",s.home);put("seed",s.seed)
@@ -14,6 +14,13 @@ object SimcastArchive {
         put("awayPlayerCount",s.awayPlayerCount);put("homePlayerCount",s.homePlayerCount)
         put("awayQuarters",JSONArray(s.awayQuarters));put("homeQuarters",JSONArray(s.homeQuarters))
         put("awayFinal",s.awayFinal);put("homeFinal",s.homeFinal)
+        put("awayOvertime",s.awayOvertime);put("homeOvertime",s.homeOvertime)
+        put("overtimePlayed",s.overtimePlayed)
+        put("integrity",JSONObject().apply{
+            put("rulesVersion","V1.6_GAME_INTEGRITY")
+            put("ok",s.integrityErrors.isEmpty())
+            put("errors",JSONArray(s.integrityErrors))
+        })
         put("calibration",JSONObject().apply {
             put("cutoffWeek",s.calibration.cutoffWeek)
             put("leagueGames",s.calibration.leagueGames)
@@ -32,6 +39,9 @@ object SimcastArchive {
             put("id",p.id);put("team",p.team);put("name",p.name)
             put("position",p.position);put("passAttemptsWeighted",p.passAttempts)
             put("carriesWeighted",p.carries);put("targetsWeighted",p.targets)
+            put("completionsWeighted",p.completions);put("passYardsWeighted",p.passingYards)
+            put("rushYardsWeighted",p.rushingYards);put("receptionsWeighted",p.receptions)
+            put("recYardsWeighted",p.receivingYards)
         })}})
         put("plays",JSONArray().apply{s.plays.forEach{p->put(JSONObject().apply{
             put("index",p.index);put("drive",p.drive);put("team",p.offense)

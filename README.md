@@ -1,3 +1,9 @@
+## NFL Data Center V1.6 — Game Integrity & Player Efficiency
+
+**Nueva actualización**: [SIMCAST_GAME_INTEGRITY_V1_6.md](SIMCAST_GAME_INTEGRITY_V1_6.md). Incluye reglas de mitades y OT, puntos extra auditables, modelos conservadores de eficiencia individual y pruebas Kotlin para 1,000 simulaciones. **No sustituye los pronósticos del Core, ni está validado fuera de muestra**.
+
+---
+
 > **Novedad 1.5:** [Simulation Center, auditor, calibración y Data Vault V8](SIMULATION_CENTER_V1_5.md).
 
 > **V1.3 Player Usage Simcast:** Leer [SIMCAST_PLAYER_USAGE_V1_3.md](SIMCAST_PLAYER_USAGE_V1_3.md) para cambios, compatibilidad y limitaciones.
