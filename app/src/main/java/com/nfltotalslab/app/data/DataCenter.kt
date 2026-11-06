@@ -33,6 +33,10 @@ data class FeedSnapshot(
 
 data class FeedLoadResult(val feed:NflFeed, val rows:Int, val throughWeek:Int, val changed:Boolean, val note:String)
 
+/** Pregame Simcast inputs. The season-level CSVs do not certify a week cutoff. */
+data class SimcastMetricsInput(val metrics:TeamMetrics?,val origin:String,val throughWeek:Int)
+
+
 class DataCenter(private val db:DbHelper){
     fun snapshot(season:Int, feed:NflFeed):FeedSnapshot? = db.readableDatabase.rawQuery(
         "SELECT through_week, row_count, source_as_of, imported_at, sha256, origin FROM nfl_feed_snapshots WHERE season=? AND feed=?",
@@ -198,6 +202,37 @@ class DataCenter(private val db:DbHelper){
                 (row.optString("rushing_attempts").toIntOrNull() ?: 0))
         if(plays<=0)return official
         return official.copy(plays=plays)
+    }
+
+    /** Strict source gate for Simcast. NEVER feed a later season-to-date PBP snapshot.
+     * EPA rating rows are eligible only for an earlier verified week, and cannot be newer
+     * than the calendar date of this matchup. Week 0 aggregates are informational only. */
+    fun simcastMetrics(game:GameRecord,team:String,base:TeamMetrics?,priorGames:Int):SimcastMetricsInput {
+        if(base!=null && base.team==team && base.games in 2..priorGames && base.plays>=80){
+            return SimcastMetricsInput(base,"NFL PBP: ${base.games} juegos anteriores",game.week-1)
+        }
+        val snap=snapshot(game.season,NflFeed.TEAM_RATINGS)
+        if(snap==null || snap.throughWeek !in 1 until game.week)
+            return SimcastMetricsInput(null,"SIN EPA previo verificado; prior conservador",0)
+        val asOfDate=snap.sourceAsOf.take(10)
+        if(asOfDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) &&
+            game.gameDay.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && asOfDate>game.gameDay){
+            return SimcastMetricsInput(null,"EPA posterior al juego bloqueado",0)
+        }
+        val row=teamRow(game.season,NflFeed.TEAM_RATINGS,team)
+            ?: return SimcastMetricsInput(null,"Equipo sin fila EPA",0)
+        val off=row.optString("off_epa_play").toDoubleOrNull()
+        val def=row.optString("def_epa_play").toDoubleOrNull()
+        if(off==null || def==null || !off.isFinite() || !def.isFinite() || off !in -2.0..2.0 || def !in -2.0..2.0){
+            return SimcastMetricsInput(null,"EPA externo ausente/no válido",0)
+        }
+        fun split(name:String):Double?=row.optString(name).toDoubleOrNull()?.takeIf { it.isFinite() && it in -2.0..2.0 }
+        val metric=TeamMetrics(game.season,team,
+            offEpaPerPlay=off,defEpaAllowedPerPlay=def,
+            successRate=split("off_success_rate")?.coerceIn(.20,.70) ?: .43,
+            offPassEpa=split("off_pass_epa_play"),defPassEpaAllowed=split("def_pass_epa_play"),
+            offRushEpa=split("off_rush_epa_play"),defRushEpaAllowed=split("def_rush_epa_play"))
+        return SimcastMetricsInput(metric,"The Margin EPA: semana ${snap.throughWeek}",snap.throughWeek)
     }
 
     /** NFLverse weekly-only player usage, strictly earlier than the requested matchup week. */

@@ -7,7 +7,7 @@ import org.json.JSONObject
 object SimcastBatchArchive {
     fun toJson(b:BatchReport):JSONObject = JSONObject().apply {
         put("schema","NFL_SIMCAST_BATCH_V2")
-        put("version","1.6.0-EXPERIMENTAL")
+        put("version","1.6.1-REAL-WEEKLY-CALIBRATION")
         put("gameId",b.gameId);put("season",b.season);put("week",b.week)
         put("away",b.away);put("home",b.home);put("seed",b.baseSeed);put("n",b.n)
         put("batchKey","${b.gameId}|${b.builtAt}|${b.baseSeed}|${b.n}")
@@ -48,6 +48,18 @@ object SimcastBatchArchive {
             put("awayScoringFactor",c.awayScoringFactor);put("homeScoringFactor",c.homeScoringFactor)
             put("clockFactor",c.clockFactor);put("driveTarget",c.driveTarget)
             put("driveSampleTeams",c.driveSampleTeams)
+            put("matchupExpectedAwayPpgReference",c.awayMatchupPpg)
+            put("matchupExpectedHomePpgReference",c.homeMatchupPpg)
+            put("awayMetricsSource",c.awayMetricsSource)
+            put("homeMetricsSource",c.homeMetricsSource)
+            put("playerSource",c.playerSource)
+            put("seasonTotalCutoff", "UNKNOWN - excluded from pregame calibration")
+            put("awayScoringGap",b.meanAway-c.awayMatchupPpg)
+            put("homeScoringGap",b.meanHome-c.homeMatchupPpg)
+            put("scoringReferenceNotTarget",true)
+            put("calibrationWarning",if(kotlin.math.abs(b.meanAway-c.awayMatchupPpg)/c.awayMatchupPpg>.25 ||
+                kotlin.math.abs(b.meanHome-c.homeMatchupPpg)/c.homeMatchupPpg>.25)
+                    "Simulated score differs >25% from prior-week matchup reference; unvalidated" else "")
         })
         put("histogram",JSONArray().apply { b.totalHistogram.forEach{(start,n)->
             put(JSONObject().apply { put("from",start);put("to",start+4);put("n",n) })

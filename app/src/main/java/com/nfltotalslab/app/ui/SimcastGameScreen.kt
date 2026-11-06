@@ -293,7 +293,13 @@ fun SimcastGameScreen(
                         Text("Corte: semana ${c.cutoffWeek} · ${c.leagueGames} partidos anteriores · ${c.awayGames}/${c.homeGames} por equipo",color=scMuted,fontSize=11.sp)
                         Text("PPG regularizados: ${b.away} ${"%.1f".format(c.awayPpg)} · ${b.home} ${"%.1f".format(c.homePpg)}; tempo de drives ${"%.1f".format(c.driveTarget)}",color=scMuted,fontSize=11.sp)
                         Text(if(b.pregame)"✓ Generado antes del kickoff (datos por semana)" else "NO PREGAME: comparación histórica no válida sin datos congelados",color=if(b.pregame)scGreen else scAmber,fontSize=10.sp)
-                        Text("Aviso: los datos PBP de equipo requieren snapshot pregame para backtesting estricto; sin ese snapshot, no se acredita mejora de precisión.",color=scMuted,fontSize=10.sp)
+                        Text("Fuentes aplicadas: ${b.away}: ${c.awayMetricsSource} · ${b.home}: ${c.homeMetricsSource}",color=scGreen,fontSize=10.sp)
+                        Text("Jugador: nflverse Player Weekly (semanas previas). Team/Player Season Totals sin corte certificado: NO usados para calibración pregame.",color=scAmber,fontSize=10.sp)
+                        Text("PPG referencia por equipo/rival (no objetivo forzado): ${b.away} ${"%.1f".format(c.awayMatchupPpg)} · ${b.home} ${"%.1f".format(c.homeMatchupPpg)}",color=scMuted,fontSize=10.sp)
+                        val discrepancy=maxOf(kotlin.math.abs(b.meanAway-c.awayMatchupPpg)/c.awayMatchupPpg,
+                            kotlin.math.abs(b.meanHome-c.homeMatchupPpg)/c.homeMatchupPpg)
+                        if(discrepancy>.25)Text("ALERTA: diferencia >25% entre simulación y PPG previos. Revisar QB, eficiencia y scoring antes de apostar.",color=scAmber,fontSize=11.sp)
+                        Text("Verificar contra resultados futuros y snapshot de datos anterior al kickoff antes de declarar precisión.",color=scMuted,fontSize=10.sp)
                     }
                 }
             }

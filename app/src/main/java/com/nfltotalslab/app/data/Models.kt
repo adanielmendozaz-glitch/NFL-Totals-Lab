@@ -39,7 +39,12 @@ data class TeamMetrics(
     val drivesPerGame: Double = 10.6,
     val pointsPerDrive: Double = 2.05,
     val rosterCount: Int = 0,
-    val injuryCount: Int = 0
+    val injuryCount: Int = 0,
+    // Optional external pregame-only EPA splits; not written to the PBP DB schema.
+    val offPassEpa: Double? = null,
+    val defPassEpaAllowed: Double? = null,
+    val offRushEpa: Double? = null,
+    val defRushEpaAllowed: Double? = null
 )
 
 data class EngineSlice(

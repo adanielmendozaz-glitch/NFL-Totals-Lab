@@ -185,9 +185,10 @@ class NflRepository(
         val calibration=PregameSimcastCalibration.build(game,db.loadGames(game.season),m[game.awayTeam],m[game.homeTeam])
         // Strict cutoff for season-to-date PBP: if a snapshot includes more games than
         // were completed before this fixture, discard it instead of leaking future plays.
-        val aMetrics=m[game.awayTeam]?.takeIf{it.games in 2..calibration.awayGames}
-        val hMetrics=m[game.homeTeam]?.takeIf{it.games in 2..calibration.homeGames}
-        val run=PlayerUsageDriveEngine().simulate(game,a,h,aMetrics,hMetrics,seed,lineup,calibration)
+        val safeA=dataCenter.simcastMetrics(game,game.awayTeam,m[game.awayTeam],calibration.awayGames)
+        val safeH=dataCenter.simcastMetrics(game,game.homeTeam,m[game.homeTeam],calibration.homeGames)
+        val inputs=calibration.copy(awayMetricsSource=safeA.origin,homeMetricsSource=safeH.origin)
+        val run=PlayerUsageDriveEngine().simulate(game,a,h,safeA.metrics,safeH.metrics,seed,lineup,inputs)
         check(run.integrityErrors.isEmpty()) { "Reglas NFL inválidas: ${run.integrityErrors.joinToString()}" }
         withContext(Dispatchers.IO){db.saveSimcastReport(game,seed,SimcastArchive.toJson(run).toString())}
         run
@@ -201,18 +202,26 @@ class NflRepository(
         val h=dataCenter.usageFor(game,game.homeTeam)
         val m=db.loadMetrics(game.season).associateBy{it.team}
         val c=PregameSimcastCalibration.build(game,db.loadGames(game.season),m[game.awayTeam],m[game.homeTeam])
-        val aMetrics=m[game.awayTeam]?.takeIf{it.games in 2..c.awayGames}
-        val hMetrics=m[game.homeTeam]?.takeIf{it.games in 2..c.homeGames}
+        val safeA=dataCenter.simcastMetrics(game,game.awayTeam,m[game.awayTeam],c.awayGames)
+        val safeH=dataCenter.simcastMetrics(game,game.homeTeam,m[game.homeTeam],c.homeGames)
+        val aMetrics=safeA.metrics
+        val hMetrics=safeH.metrics
+        val calibration=c.copy(awayMetricsSource=safeA.origin,homeMetricsSource=safeH.origin)
         val pregame=!game.finished && !KickoffGuard.isLocked(game)
         val signatureText=buildString {
-            append("V16|${game.season}|${game.week}|${game.gameId}|${game.totalLine}|")
-            append("${c.method}|${c.cutoffWeek}|${c.leagueGames}|")
+            append("V161|${game.season}|${game.week}|${game.gameId}|${game.totalLine}|")
+            append("${calibration.method}|${c.cutoffWeek}|${c.leagueGames}|")
             listOf(game.awayTeam,game.homeTeam).forEach { team ->
                 val mm=if(team==game.awayTeam)aMetrics else hMetrics
-                append("${team}:${mm?.games}:${mm?.offEpaPerPlay}:${mm?.defEpaAllowedPerPlay}|")
+                append("${team}:${if(team==game.awayTeam)safeA.origin else safeH.origin}:${mm?.games}:${mm?.offEpaPerPlay}:${mm?.defEpaAllowedPerPlay}:${mm?.offPassEpa}:${mm?.defPassEpaAllowed}:${mm?.offRushEpa}:${mm?.defRushEpaAllowed}|")
             }
-            dataCenter.all(game.season).sortedBy{it.feed.name}.forEach { f->
-                append("${f.feed.name}:${f.throughWeek}:${f.sha256}|")
+            // Hash actual selected prior-week player inputs, not a season CSV that may
+            // have been overwritten after this matchup. Later weeks cannot influence this signature.
+            listOf(a,h).forEach { input->
+                append("${input.team}:W${input.throughWeek}|")
+                input.players.sortedBy { it.id }.forEach { p->
+                    append("${p.id}:${p.passAttempts}:${p.completions}:${p.passingYards}:${p.carries}:${p.rushingYards}:${p.targets}:${p.receptions}:${p.receivingYards}|")
+                }
             }
             append("${lineup.away.startingQb}:${lineup.home.startingQb}|")
             append(lineup.away.outNames.sorted().joinToString(","))
@@ -222,7 +231,7 @@ class NflRepository(
         val signature=MessageDigest.getInstance("SHA-256").digest(signatureText.toByteArray())
             .joinToString(""){ "%02x".format(it) }
         val parentJob=currentCoroutineContext()
-        val report=SimcastBatchEngine().run(game,a,h,aMetrics,hMetrics,lineup,c,
+        val report=SimcastBatchEngine().run(game,a,h,aMetrics,hMetrics,lineup,calibration,
             count,seed,pregame,onProgress,shouldContinue={parentJob.isActive},inputSignature=signature)
         withContext(Dispatchers.IO){
             val j=SimcastBatchArchive.toJson(report)

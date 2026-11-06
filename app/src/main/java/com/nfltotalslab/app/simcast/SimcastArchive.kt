@@ -27,6 +27,11 @@ object SimcastArchive {
             put("awayScoringFactor",s.calibration.awayScoringFactor)
             put("homeScoringFactor",s.calibration.homeScoringFactor)
             put("clockFactor",s.calibration.clockFactor)
+            put("method",s.calibration.method)
+            put("awayMetricsSource",s.calibration.awayMetricsSource)
+            put("homeMetricsSource",s.calibration.homeMetricsSource)
+            put("playerSource",s.calibration.playerSource)
+            put("seasonTotalCutoff","UNKNOWN - excluded")
         })
         put("lineup",JSONObject().apply{
             fun team(l:TeamLineup)=JSONObject().apply{

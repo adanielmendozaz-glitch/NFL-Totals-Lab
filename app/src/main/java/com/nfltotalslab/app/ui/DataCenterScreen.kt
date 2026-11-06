@@ -61,11 +61,11 @@ fun DataCenterScreen(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("NFL DATA CENTER",fontSize=20.sp,fontWeight=FontWeight.Black,color=Text)
-                Text("Temporada $season · NFL Totals Lab V1.2",fontSize=11.sp,color=Muted)
+                Text("Temporada $season · NFL Totals Lab V1.6.1",fontSize=11.sp,color=Muted)
             }
         }
         Text("Fuentes descargables independientes",color=Green,fontWeight=FontWeight.Bold,fontSize=12.sp)
-        Text("EPA externo: contraste y respaldo si faltan datos PBP. Estadísticas individuales: guardadas para Player Usage Engine; aún no ajustan el Core.",
+        Text("Simcast: EPA anterior al partido como respaldo + Player Weekly para volumen y eficiencia. Acumulados sin corte verificable NO se usan para partidos históricos. El Core sigue independiente.",
             color=Muted,fontSize=11.sp)
         NflFeed.entries.forEach{ feed->
             val status=snapshots.firstOrNull{it.feed==feed}
@@ -78,6 +78,8 @@ fun DataCenterScreen(
                         Text("Importado: ${Date(status.importedAt)}",color=Muted,fontSize=10.sp)
                         if(status.sourceAsOf.isNotBlank())Text("Datos hasta: ${status.sourceAsOf}",color=Muted,fontSize=10.sp)
                         Text("Huella SHA-256: ${status.sha256.take(14)}…",color=Muted,fontSize=9.sp)
+                        if(status.throughWeek==0 && feed in setOf(NflFeed.TEAM_STATS,NflFeed.PLAYER_TOTALS))
+                            Text("Solo consulta: corte semanal no verificable; excluido de calibración pregame.",color=Amber,fontSize=10.sp)
                     }else Text("SIN CARGAR · sin datos para esta fuente",color=Amber,fontSize=11.sp)
                     OutlinedButton(
                         modifier=Modifier.fillMaxWidth(),

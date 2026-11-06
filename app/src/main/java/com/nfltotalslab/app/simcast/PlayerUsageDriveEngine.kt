@@ -32,6 +32,29 @@ data class GameLineup(
     val home:TeamLineup=TeamLineup()
 )
 
+/** nflverse weekly efficiency computed from weighted *prior* player box scores.
+ * Volume ratios are regularized toward NFL priors because a four-game window is noisy. */
+internal data class ObservedTeamEfficiency(
+    val passRate:Double,val rushYpc:Double,val passYpa:Double,
+    val completionRate:Double,val passAttempts:Double,val rushAttempts:Double
+){
+    companion object {
+        fun from(usage:TeamUsage):ObservedTeamEfficiency {
+            val qbs=usage.players.filter{it.position=="QB"}
+            val pass=qbs.sumOf{it.passAttempts}.coerceAtLeast(0.0)
+            val completions=qbs.sumOf{it.completions}.coerceIn(0.0,pass)
+            val passYds=qbs.sumOf{it.passingYards}.coerceAtLeast(0.0)
+            val rush=usage.players.sumOf{it.carries}.coerceAtLeast(0.0)
+            val rushYds=usage.players.sumOf{it.rushingYards}
+            val share=(pass+.58*100)/(pass+rush+100)
+            return ObservedTeamEfficiency(share.coerceIn(.40,.76),
+                ((rushYds+4.30*70)/(rush+70)).coerceIn(2.8,6.8),
+                ((passYds+7.0*85)/(pass+85)).coerceIn(4.0,10.0),
+                ((completions+.62*85)/(pass+85)).coerceIn(.48,.74),pass,rush)
+        }
+    }
+}
+
 /** Fixed to this specific fixture; never generalized across later weeks. Updated 2026-11-05.
  * Source: https://www.baltimoreravens.com/news/lamar-jackson-tyler-huntley-injured-reserve-austin-reed-adisa-isaac-jake-moody
  * Inactives are not inferred for players listed Questionable. */
@@ -117,6 +140,7 @@ class PlayerUsageDriveEngine {
                     ?: UsagePlayer("fallback:$team:QB","QB sin datos","QB",team,passAttempts=1.0)
         }
         val metrics=mapOf(game.awayTeam to awayMetrics,game.homeTeam to homeMetrics)
+        val observed=usage.mapValues{ObservedTeamEfficiency.from(it.value)}
         fun opponent(team:String)=if(team==game.awayTeam)game.homeTeam else game.awayTeam
         fun score(team:String)= if(team==game.awayTeam)awayQ.sum()+awayOt else homeQ.sum()+homeOt
         fun choose(team:String,role:String):UsagePlayer {
@@ -142,10 +166,15 @@ class PlayerUsageDriveEngine {
             val sample=qb.passAttempts
             val prior=.62
             val priorWeight=85.0
-            val estimated=if(qb.completions<=0.0 && qb.passingYards<=0.0)prior
-                else (qb.completions+prior*priorWeight)/(sample+priorWeight)
+            val teamRate=observed.getValue(offense).completionRate
+            val blendedPrior=.75*prior+.25*teamRate
+            val estimated=if(qb.completions<=0.0 && qb.passingYards<=0.0)blendedPrior
+                else (qb.completions+blendedPrior*priorWeight)/(sample+priorWeight)
             val opp=metrics[opponent(offense)]
-            val defensiveAdjustment=((opp?.defEpaAllowedPerPlay ?: 0.0)*.12).coerceIn(-.04,.04)
+            val m=metrics[offense]
+            val passEpa=(m?.offPassEpa ?: m?.offEpaPerPlay ?: 0.0)+
+                (opp?.defPassEpaAllowed ?: opp?.defEpaAllowedPerPlay ?: 0.0)
+            val defensiveAdjustment=(passEpa*.12).coerceIn(-.05,.05)
             return (estimated+defensiveAdjustment+
                 (calibration.factor(offense,game)-1.0)*.12).coerceIn(.48,.72)
         }
@@ -154,23 +183,24 @@ class PlayerUsageDriveEngine {
             val posterior=if(runner.rushingYards<=0.0)priorYpc
                 else (runner.rushingYards+priorYpc*60)/(runner.carries+60)
             val m=metrics[offense];val opp=metrics[opponent(offense)]
-            val epa=((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0)).coerceIn(-.3,.3)
-            return ((posterior/priorYpc)*(1+epa*.20)*
+            val epa=((m?.offRushEpa ?: m?.offEpaPerPlay ?: 0.0)+
+                (opp?.defRushEpaAllowed ?: opp?.defEpaAllowedPerPlay ?: 0.0)).coerceIn(-.3,.3)
+            val observedYpc=observed.getValue(offense).rushYpc
+            val blendedYpc=.75*posterior+.25*observedYpc
+            return ((blendedYpc/priorYpc)*(1+epa*.20)*
                 (1.0+(calibration.factor(offense,game)-1.0)*.30)).coerceIn(.74,1.28)
         }
         fun catchEfficiency(target:UsagePlayer,qb:UsagePlayer):Double {
             val ypr=(target.receivingYards+12.0*18)/(target.receptions+18)
             val quarterbackYpa=if(qb.passingYards<=0.0)6.8
                 else (qb.passingYards+6.8*95)/(qb.passAttempts+95)
-            return ((ypr/12.0)*.65+(quarterbackYpa/6.8)*.35).coerceIn(.70,1.40)
+            val teamYpa=observed.getValue(target.team).passYpa
+            return ((ypr/12.0)*.60+(quarterbackYpa/6.8)*.28+
+                (teamYpa/7.0)*.12).coerceIn(.70,1.40)
         }
         fun passShare(team:String,remaining:Int):Double {
-            val players=usage.getValue(team).players
-            val pass=players.filter{it.position=="QB"}.sumOf{it.passAttempts}
-            val rush=players.sumOf{it.carries}
-            // Historical QB injuries remove passing volume: shrink toward NFL prior, not to 100% rushing.
-            val historical=if(pass+rush>12)pass/(pass+rush) else .58
-            val baseline=(historical*.35+.58*.65).coerceIn(.49,.69)
+            // Empirical ratio from nflverse Player Weekly, with 100-play prior.
+            val baseline=observed.getValue(team).passRate.coerceIn(.42,.73)
             val deficit=score(opponent(team))-score(team)
             val gameScript=when{
                 remaining<=480 && deficit>=8 -> .13
@@ -275,7 +305,8 @@ class PlayerUsageDriveEngine {
             val opponentTeam=opponent(team)
             val m=metrics[team]
             val opp=metrics[opponentTeam]
-            val epa=((m?.offEpaPerPlay ?: 0.0)-(opp?.defEpaAllowedPerPlay ?: 0.0)).coerceIn(-.3,.3)
+            val passEpa=((m?.offPassEpa ?: m?.offEpaPerPlay ?: 0.0)+
+                (opp?.defPassEpaAllowed ?: opp?.defEpaAllowedPerPlay ?: 0.0)).coerceIn(-.3,.3)
             while(!ended && (if(isOvertime)overtimeRemaining else remaining)>0
                 && (isOvertime || halftimeDone || remaining>1800)
                 && plays.size<250 && playsInDrive<18){
@@ -292,7 +323,13 @@ class PlayerUsageDriveEngine {
                 var points=0
                 var turnover=false
                 val qb=choose(team,"QB")
-                if(down==4 || playsInDrive==18){
+                // 4th-down decisions depend on field position, distance and clock.
+                val lateTrailing=(if(isOvertime)overtimeRemaining else remaining) < 360 &&
+                    score(team)<score(opponentTeam)
+                val goForFourth=down==4 && playsInDrive<18 && spot in 42..93 &&
+                    (lateTrailing || (dist<=2 && rng.nextDouble()<.42) ||
+                        (dist<=5 && spot>=69 && rng.nextDouble()<.18))
+                if((down==4 && !goForFourth) || playsInDrive==18){
                     if(spot>=62){
                         val kickDistance=100-spot+17
                         val fgChance=when{
@@ -320,19 +357,20 @@ class PlayerUsageDriveEngine {
                     val qbstats=playerStats(qb);val rcstats=playerStats(target)
                     qbstats.passAttempts++;rcstats.targets++
                     val completion=completionRate(qb,team)
+                    val isSack=rng.nextDouble()<.038
                     val roll=rng.nextDouble()
                     when {
-                        roll<.038->{
+                        isSack->{
                             kind="SACK";yards=-(2+rng.nextInt(7));desc="Captura a ${qb.name}"
                             qbstats.passAttempts--;rcstats.targets--;receiver=""
                         }
-                        roll<.057->{
+                        roll<.019->{
                             kind="INT";turnover=true;qbstats.interceptions++
                             desc="Intercepción en pase de ${qb.name}"
                         }
-                        roll<completion->{
+                        roll<.019+completion->{
                             kind="PASS";qbstats.completions++;rcstats.receptions++
-                            yards=(drawPassYards()*catchEfficiency(target,qb)*(1.0+epa*.25)).toInt().coerceIn(1,100-spot)
+                            yards=(drawPassYards()*catchEfficiency(target,qb)*(1.0+passEpa*.25)).toInt().coerceIn(1,100-spot)
                             qbstats.passYards+=yards;rcstats.receivingYards+=yards
                             desc="${qb.name} → ${target.name} · +$yards yd"
                         }
@@ -370,7 +408,9 @@ class PlayerUsageDriveEngine {
                 if(ending=="TD")extraPoint(team,before)
                 if(turnover){ended=true;ending="TURNOVER";nextSpot=(100-spot).coerceIn(1,99)}
                 if(!ended){
-                    if(yards>=dist){down=1;dist=min(10,100-spot)}
+                    if(d==4 && yards<dist){
+                        ended=true;ending="DOWNS";nextSpot=(100-spot).coerceIn(1,99)
+                    }else if(yards>=dist){down=1;dist=min(10,100-spot)}
                     else{down++;dist=(dist-yards).coerceIn(1,35)}
                 }
             }

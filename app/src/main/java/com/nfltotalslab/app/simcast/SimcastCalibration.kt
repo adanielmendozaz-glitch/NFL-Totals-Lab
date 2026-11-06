@@ -20,7 +20,12 @@ data class SimcastCalibration(
     val clockFactor:Double=1.0,
     val driveTarget:Double=10.6,
     val driveSampleTeams:Int=0,
-    val method:String="SHRUNK_PRIOR_WEEKS_V1"
+    val awayMatchupPpg:Double=21.5,
+    val homeMatchupPpg:Double=21.5,
+    val awayMetricsSource:String="SIN EPA",
+    val homeMetricsSource:String="SIN EPA",
+    val playerSource:String="nflverse Player Weekly",
+    val method:String="PRIOR_WEEKS_2026_EMPIRICAL_V161"
 ){
     fun factor(team:String,game:GameRecord):Double = if(team==game.awayTeam)awayScoringFactor else homeScoringFactor
 }
@@ -52,7 +57,9 @@ object PregameSimcastCalibration {
             awayGames=ag.size,homeGames=hg.size,
             leaguePpg=global,awayPpg=aOff,homePpg=hOff,
             awayScoringFactor=factor(aOff,hDef),homeScoringFactor=factor(hOff,aDef),
-            clockFactor=(10.6/target).coerceIn(.88,1.12),driveTarget=target,driveSampleTeams=validPaces.size
+            clockFactor=(10.6/target).coerceIn(.88,1.12),driveTarget=target,driveSampleTeams=validPaces.size,
+            awayMatchupPpg=((aOff+hDef)/2.0).coerceIn(10.0,35.0),
+            homeMatchupPpg=((hOff+aDef)/2.0).coerceIn(10.0,35.0)
         )
     }
 }
