@@ -1,0 +1,617 @@
+{
+  "schema": "NFL_WEEK9_STARTERS_INJURY_SNAPSHOT_V1",
+  "season": 2026,
+  "week": 9,
+  "asOf": "2026-11-08T08:10:00-06:00",
+  "timezone": "America/Monterrey",
+  "notes": [
+    "Instantánea documental, no fuente en vivo; revalidar inactivos 90 minutos antes de kickoff.",
+    "OUT / IR se excluyen para este juego; QUESTIONABLE y DOUBTFUL no se excluyen automáticamente sin lista de inactivos.",
+    "No incluye todas las bajas históricas de IR, solo las identificadas; la NFL publica semanalmente OUT y QUESTIONABLE.",
+    "Los quarterbacks previstos son depth chart de semana 9. confirmed=true solo para sustitutos anunciados por club o reporte directo.",
+    "La sede de CIN-ATL es neutral (Madrid). No aplicar ventaja local convencional.",
+    "El evento JAX-BAL terminó el 5 de noviembre, se excluye."
+  ],
+  "sourceUrls": [
+    "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season",
+    "https://www.si.com/nfl/every-starting-nfl-quarterback-2026-season-updated-weekly",
+    "https://www.nfl.com/schedules/2026/by-week/week-9"
+  ],
+  "games": [
+    {
+      "gameId": "2026_09_CIN_ATL",
+      "away": "CIN",
+      "home": "ATL",
+      "kickoffMonterrey": "2026-11-08T08:30:00-06:00",
+      "neutralSite": true,
+      "awayStatus": {
+        "qb": "Joe Burrow",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Kyle Dugger"
+        ],
+        "questionable": [
+          "Cedric Johnson"
+        ],
+        "doubtful": [],
+        "ir": [
+          "Tanner Hudson"
+        ],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season",
+        "inactiveOther": [
+          "Connor Lew",
+          "Myles Hinton",
+          "Landon Robinson"
+        ]
+      },
+      "homeStatus": {
+        "qb": "Michael Penix Jr.",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Brian Robinson Jr.",
+          "Zachariah Branch",
+          "Cameron Williams",
+          "Billy Bowman"
+        ],
+        "questionable": [
+          "Beaux Collins",
+          "James Pearce Jr.",
+          "Yasir Abdullah",
+          "Divine Deablo"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season",
+        "inactiveOther": [
+          "Andy Dalton (emergency QB3)",
+          "Jack Strand",
+          "Billy Bowman",
+          "Robert Longerbeam",
+          "Drake Jackson"
+        ]
+      },
+      "inactivesPublished": true,
+      "inactivesSource": "https://www.bengals.com/news/bengals-falcons-inactives-week-9-2026"
+    },
+    {
+      "gameId": "2026_09_DEN_CAR",
+      "away": "DEN",
+      "home": "CAR",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Bo Nix",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Eyioma Uwazurike",
+          "Kris Abrams-Draine",
+          "Brandon Jones"
+        ],
+        "questionable": [
+          "Pat Bryant",
+          "Dondrea Tillman",
+          "Talanoa Hufanga"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Bryce Young",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Damien Lewis",
+          "Jaelan Phillips",
+          "Bobby Okereke",
+          "Will Lee III"
+        ],
+        "questionable": [
+          "Corey Bullock",
+          "Brady Christensen",
+          "Torricelli Simpkins III"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_DAL_IND",
+      "away": "DAL",
+      "home": "IND",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Dak Prescott",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "KaVontae Turpin",
+          "Malachi Lawrence"
+        ],
+        "questionable": [
+          "George Pickens",
+          "Jake Ferguson",
+          "Luke Schoonmaker",
+          "Jonathan Bullard",
+          "Marist Liufau",
+          "DeMarvion Overshown",
+          "Joey Porter Jr."
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Daniel Jones",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Akeem Davis-Gaither",
+          "Justin Walley",
+          "A.J. Haulcy"
+        ],
+        "questionable": [
+          "Jalen Travis"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_NYJ_KC",
+      "away": "NYJ",
+      "home": "KC",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Geno Smith",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Garrett Wilson",
+          "Joseph Ossai",
+          "Trevin Wallace",
+          "Nahshon Wright",
+          "VJ Payne"
+        ],
+        "questionable": [
+          "Harrison Phillips"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Patrick Mahomes",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Omarr Norman-Lott",
+          "Peter Woods",
+          "Mansoor Delane"
+        ],
+        "questionable": [
+          "Nikko Remigio"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_DET_MIA",
+      "away": "DET",
+      "home": "MIA",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Jared Goff",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Cade Mays",
+          "D.J. Wonnum",
+          "Jack Campbell",
+          "D.J. Reed",
+          "Kerby Joseph"
+        ],
+        "questionable": [
+          "Jacob Saylors",
+          "Sione Vaki",
+          "Amon-Ra St. Brown"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Malik Willis",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [],
+        "questionable": [
+          "Kaytron Allen",
+          "Jaylen Wright",
+          "Malik Herring"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_CLE_NO",
+      "away": "CLE",
+      "home": "NO",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Shedeur Sanders",
+        "confirmed": true,
+        "qbSource": "https://www.clevelandbrowns.com/news/shedeur-sanders-to-start-week-9-against-the-saints",
+        "out": [
+          "Maliek Collins"
+        ],
+        "questionable": [
+          "Deshaun Watson"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Tyler Shough",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "CJ Donaldson"
+        ],
+        "questionable": [
+          "Jordyn Tyson",
+          "Kelvin Banks Jr.",
+          "Asim Richards",
+          "Martin Emerson"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_NYG_PHI",
+      "away": "NYG",
+      "home": "PHI",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "J.J. McCarthy",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [],
+        "questionable": [
+          "Charlie Jones"
+        ],
+        "doubtful": [
+          "Cam Skattebo"
+        ],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Joe Milton III",
+        "confirmed": true,
+        "qbSource": "https://www.nfl.com/news/eagles-starting-qb-joe-milton-tanner-mckee-week-9-vs-giants",
+        "out": [
+          "Britain Covey",
+          "DeVonta Smith",
+          "Dontayvion Wicks",
+          "Jihaad Campbell",
+          "Jonathan Jones",
+          "Michael Carter II"
+        ],
+        "questionable": [
+          "Tanner McKee"
+        ],
+        "doubtful": [],
+        "ir": [
+          "Jalen Hurts"
+        ],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_LAR_WAS",
+      "away": "LAR",
+      "home": "WAS",
+      "kickoffMonterrey": "2026-11-08T12:00:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Matthew Stafford",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Terrance Ferguson",
+          "Jaylen Watson"
+        ],
+        "questionable": [
+          "Jordan Whittington",
+          "Colby Parkinson",
+          "Grant Stuard",
+          "Trent McDuffie",
+          "Kamren Curl"
+        ],
+        "doubtful": [
+          "Joe Cardona"
+        ],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Jayden Daniels",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Dyami Brown",
+          "Treylon Burks"
+        ],
+        "questionable": [],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_HOU_LAC",
+      "away": "HOU",
+      "home": "LAC",
+      "kickoffMonterrey": "2026-11-08T15:05:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "C.J. Stroud",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "David Montgomery",
+          "Reed Blankenship"
+        ],
+        "questionable": [],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Justin Herbert",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Deane Leonard",
+          "Kendall Williamson"
+        ],
+        "questionable": [
+          "Brenen Thompson",
+          "David Njoku",
+          "Kayode Awosika",
+          "Denzel Perryman"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_LV_SF",
+      "away": "LV",
+      "home": "SF",
+      "kickoffMonterrey": "2026-11-08T15:25:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Kirk Cousins",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Thomas Booker"
+        ],
+        "questionable": [
+          "Darien Porter"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Brock Purdy",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Mike Evans",
+          "Christian Kirk",
+          "Deebo Samuel"
+        ],
+        "questionable": [
+          "Upton Stout",
+          "Nate Hobbs",
+          "Siran Neal"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_GB_NE",
+      "away": "GB",
+      "home": "NE",
+      "kickoffMonterrey": "2026-11-08T15:25:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Jordan Love",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Josh Whyle",
+          "Travis Glover",
+          "Sean Rhyan",
+          "Micah Parsons",
+          "Zaire Franklin"
+        ],
+        "questionable": [
+          "Chris Brooks",
+          "MarShawn Lloyd",
+          "Keisean Nixon"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Drake Maye",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "TreVeyon Henderson",
+          "A.J. Brown"
+        ],
+        "questionable": [
+          "Mack Hollins",
+          "Hunter Henry",
+          "Morgan Moses",
+          "Greg Van Roten",
+          "Carlton Davis",
+          "Kevin Byard",
+          "Brenden Schooler"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_AZ_SEA",
+      "away": "AZ",
+      "home": "SEA",
+      "kickoffMonterrey": "2026-11-08T15:25:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Gardner Minshew II",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Bam Knight",
+          "Jon Gaines II",
+          "Jayden Williams"
+        ],
+        "questionable": [
+          "Isaiah Adams",
+          "Walter Nolen",
+          "Max Melton"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Drew Lock",
+        "confirmed": true,
+        "qbSource": "https://www.seahawks.com/news/seahawks-qb-sam-darnold-out-for-sunday-s-game-vs-arizona-due-to-quad-injury",
+        "out": [
+          "Sam Darnold",
+          "Rashid Shaheed",
+          "Charles Cross",
+          "Quenton Nelson",
+          "Brandon Pili",
+          "Leonard Williams",
+          "Uchenna Nwosu"
+        ],
+        "questionable": [
+          "Connor O'Toole"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_TB_CHI",
+      "away": "TB",
+      "home": "CHI",
+      "kickoffMonterrey": "2026-11-08T19:20:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Baker Mayfield",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "YaYa Diaby"
+        ],
+        "questionable": [
+          "Emeka Egbuka"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Caleb Williams",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [],
+        "questionable": [
+          "Kyle Monangai",
+          "Malik Muhammad",
+          "Tyrique Stevenson"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    },
+    {
+      "gameId": "2026_09_BUF_MIN",
+      "away": "BUF",
+      "home": "MIN",
+      "kickoffMonterrey": "2026-11-09T19:15:00-06:00",
+      "neutralSite": false,
+      "awayStatus": {
+        "qb": "Josh Allen",
+        "confirmed": false,
+        "qbSource": "Depth chart semana 9",
+        "out": [
+          "Josh Palmer"
+        ],
+        "questionable": [
+          "Tyrell Shavers",
+          "Alec Anderson",
+          "Dion Dawkins",
+          "Greg Gaines",
+          "Jordan Hancock"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      },
+      "homeStatus": {
+        "qb": "Carson Wentz",
+        "confirmed": true,
+        "qbSource": "https://www.nfl.com/news/vikings-to-start-carson-wentz-vs-bills-kyler-murray-hamstring",
+        "out": [
+          "Kyler Murray",
+          "Demond Claiborne",
+          "Jauan Jennings"
+        ],
+        "questionable": [
+          "Theo Jackson",
+          "Jay Ward"
+        ],
+        "doubtful": [],
+        "ir": [],
+        "source": "https://www.nfl.com/news/nfl-week-9-injury-report-2026-season"
+      }
+    }
+  ]
+}

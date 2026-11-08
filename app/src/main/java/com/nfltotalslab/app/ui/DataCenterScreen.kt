@@ -61,7 +61,7 @@ fun DataCenterScreen(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text("NFL DATA CENTER",fontSize=20.sp,fontWeight=FontWeight.Black,color=Text)
-                Text("Temporada $season · NFL Totals Lab V1.6.1",fontSize=11.sp,color=Muted)
+                Text("Temporada $season · NFL Totals Lab V1.6.2",fontSize=11.sp,color=Muted)
             }
         }
         Text("Fuentes descargables independientes",color=Green,fontWeight=FontWeight.Bold,fontSize=12.sp)

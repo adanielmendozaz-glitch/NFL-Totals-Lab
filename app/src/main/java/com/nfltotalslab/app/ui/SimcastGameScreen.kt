@@ -54,6 +54,7 @@ fun SimcastGameScreen(
     val available=games.filter{it.week==week && it.gameType=="REG"}.sortedBy{it.gameDay+" "+it.gameTime}
     val selected=games.firstOrNull{it.gameId==gameId}
     val preset=selected?.let{PregameLineup.forGame(it)} ?: GameLineup()
+    val week9Status=selected?.let{Week9Lineups.details(it)}
     var awayQb by remember(selected?.gameId){mutableStateOf(preset.away.startingQb)}
     var homeQb by remember(selected?.gameId){mutableStateOf(preset.home.startingQb)}
     var awayOut by remember(selected?.gameId){mutableStateOf(preset.away.outNames.joinToString(", "))}
@@ -105,8 +106,8 @@ fun SimcastGameScreen(
     fun chosenLineup():GameLineup {
         fun team(qb:String,excluded:String,base:TeamLineup):TeamLineup {
             val absent=splitOut(excluded)
-            val same=qb.trim().equals(base.startingQb,ignoreCase=true) &&
-                    absent.map{it.lowercase()}.toSet()==base.outNames.map{it.lowercase()}.toSet()
+            val same=canonicalNflPlayerName(qb)==canonicalNflPlayerName(base.startingQb) &&
+                    absent.map(::canonicalNflPlayerName).toSet()==base.outNames.map(::canonicalNflPlayerName).toSet()
             return TeamLineup(qb.trim(),absent,
                 if(same)base.source else "Modificación manual · requiere verificación",same && base.verified)
         }
@@ -185,10 +186,27 @@ fun SimcastGameScreen(
                 Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
                     Text("TITULARES Y LESIONES · PREPARTIDO",color=scAmber,fontSize=12.sp,fontWeight=FontWeight.Black)
                     Text("Confirma el QB1 y elimina solo jugadores OUT/IR. QUESTIONABLE se mantiene hasta conocer los inactivos.",color=scMuted,fontSize=10.sp)
-                    if(selected!=null && preset.home.verified){
-                        Text("✓ BAL · Joe Fagnano confirmado por el equipo · 05/11/2026",color=scGreen,fontSize=11.sp,fontWeight=FontWeight.Bold)
-                        Text("OUT/IR: Lamar Jackson, Tyler Huntley. Fagnano completó prácticas con molestias de tobillo. JAX: Bhayshul Tuten era QUESTIONABLE; no se excluye sin confirmar inactivos.",color=scMuted,fontSize=10.sp)
-                    }else {
+                    if(week9Status!=null) {
+                        Text("CORTE: ${Week9Lineups.AS_OF} · Snapshot de semana 9, NO datos en vivo",color=scAmber,fontSize=10.sp)
+                        Text("QB ${week9Status.away}: ${week9Status.awayStatus.qb} " +
+                            (if(week9Status.awayStatus.qbAnnounced) "· anunciado" else "· previsto"),
+                            color=if(week9Status.awayStatus.qbAnnounced)scGreen else scText,fontSize=11.sp)
+                        Text("QB ${week9Status.home}: ${week9Status.homeStatus.qb} " +
+                            (if(week9Status.homeStatus.qbAnnounced) "· anunciado" else "· previsto"),
+                            color=if(week9Status.homeStatus.qbAnnounced)scGreen else scText,fontSize=11.sp)
+                        if(week9Status.neutralSite)Text("SEDE NEUTRAL: Madrid; sin ventaja de localía verificada en Simcast.",color=scAmber,fontSize=10.sp)
+                        fun statusLine(code:String, title:String, names:List<String>) =
+                            if(names.isNotEmpty()) "$code $title: ${names.joinToString(", ")}" else "$code $title: ninguno registrado"
+                        for((code,st) in listOf(week9Status.away to week9Status.awayStatus,week9Status.home to week9Status.homeStatus)) {
+                            Text(statusLine(code,"OUT",st.out),color=scMuted,fontSize=10.sp)
+                            if(st.ir.isNotEmpty())Text(statusLine(code,"IR identificado",st.ir),color=scMuted,fontSize=10.sp)
+                            Text(statusLine(code,"QUESTIONABLE",st.questionable),color=scAmber,fontSize=10.sp)
+                            if(st.doubtful.isNotEmpty())Text(statusLine(code,"DOUBTFUL",st.doubtful),color=scAmber,fontSize=10.sp)
+                        }
+                        Text("QUESTIONABLE/DOUBTFUL permanecen elegibles hasta confirmar inactivos. Revisar la lista oficial antes del kickoff.",color=scMuted,fontSize=10.sp)
+                    } else if(selected!=null && preset.home.verified){
+                        Text("Titular confirmado: ${selected.homeTeam} ${preset.home.startingQb}",color=scGreen,fontSize=11.sp)
+                    } else {
                         Text("Sin confirmación oficial integrada para este encuentro. Revisa el reporte antes de simular.",color=scAmber,fontSize=10.sp)
                     }
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){

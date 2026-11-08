@@ -13,6 +13,13 @@ data class UsagePlayer(
     val completions:Double=0.0, val passingYards:Double=0.0,
     val rushingYards:Double=0.0, val receptions:Double=0.0, val receivingYards:Double=0.0
 )
+
+/** Canonicalizes display-name punctuation and common NFL suffixes; never creates a player. */
+internal fun canonicalNflPlayerName(value:String):String {
+    val compact=value.lowercase(java.util.Locale.ROOT).replace(Regex("[^a-z0-9]"), "")
+    return compact.replace(Regex("(iii|ii|iv|jr|sr)$"), "")
+}
+
 data class TeamUsage(val team:String, val throughWeek:Int, val players:List<UsagePlayer>){
     val verified:Boolean get()=throughWeek>0 && players.any{it.position=="QB" && it.passAttempts>0}
 }
@@ -60,6 +67,7 @@ internal data class ObservedTeamEfficiency(
  * Inactives are not inferred for players listed Questionable. */
 object PregameLineup {
     fun forGame(game:GameRecord):GameLineup {
+        Week9Lineups.forGame(game)?.let { return it }
         if(game.season==2026 && game.week==9 && game.homeTeam=="BAL" && game.awayTeam=="JAX"){
             return GameLineup(
                 away=TeamLineup(source="JAX: titular pendiente de confirmar"),
@@ -128,13 +136,13 @@ class PlayerUsageDriveEngine {
         var homeOt=0
         val withLineup=mapOf(game.awayTeam to lineup.away,game.homeTeam to lineup.home)
         val usage=mapOf(game.awayTeam to awayUsage,game.homeTeam to homeUsage).mapValues { (team,base) ->
-            val outs=withLineup.getValue(team).outNames.map{it.trim().lowercase()}.toSet()
-            base.copy(players=base.players.filterNot{it.name.trim().lowercase() in outs})
+            val outs=withLineup.getValue(team).outNames.map(::canonicalNflPlayerName).toSet()
+            base.copy(players=base.players.filterNot{canonicalNflPlayerName(it.name) in outs})
         }
         val starters=usage.mapValues { (team,base) ->
             val name=withLineup.getValue(team).startingQb.trim()
             val pool=base.players.filter{it.position=="QB"}
-            pool.firstOrNull{it.name.equals(name,true)}
+            pool.firstOrNull{canonicalNflPlayerName(it.name)==canonicalNflPlayerName(name)}
                 ?: if(name.isNotBlank()) UsagePlayer("manual:$team:$name",name,"QB",team,passAttempts=1.0)
                    else pool.maxByOrNull{it.passAttempts}
                     ?: UsagePlayer("fallback:$team:QB","QB sin datos","QB",team,passAttempts=1.0)
