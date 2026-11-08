@@ -209,7 +209,7 @@ class NflRepository(
         val calibration=c.copy(awayMetricsSource=safeA.origin,homeMetricsSource=safeH.origin)
         val pregame=!game.finished && !KickoffGuard.isLocked(game)
         val signatureText=buildString {
-            append("V161|${game.season}|${game.week}|${game.gameId}|${game.totalLine}|")
+            append("V163_SCORE_SHADOW|${game.season}|${game.week}|${game.gameId}|${game.totalLine}|")
             append("${calibration.method}|${c.cutoffWeek}|${c.leagueGames}|")
             listOf(game.awayTeam,game.homeTeam).forEach { team ->
                 val mm=if(team==game.awayTeam)aMetrics else hMetrics
@@ -231,8 +231,12 @@ class NflRepository(
         val signature=MessageDigest.getInstance("SHA-256").digest(signatureText.toByteArray())
             .joinToString(""){ "%02x".format(it) }
         val parentJob=currentCoroutineContext()
-        val report=SimcastBatchEngine().run(game,a,h,aMetrics,hMetrics,lineup,calibration,
+        val driveReport=SimcastBatchEngine().run(game,a,h,aMetrics,hMetrics,lineup,calibration,
             count,seed,pregame,onProgress,shouldContinue={parentJob.isActive},inputSignature=signature)
+        // Independent scoring candidate. Its simulations are not substituted for the actual
+        // play-by-play game scores. Compare using pregame walk-forward out-of-sample audits.
+        val scoreShadow=ScoringShadowEngine().run(game,a,h,aMetrics,hMetrics,lineup,calibration,count,seed)
+        val report=driveReport.copy(scoringShadow=scoreShadow)
         withContext(Dispatchers.IO){
             val j=SimcastBatchArchive.toJson(report)
             db.saveSimcastBatch(game,j.getString("batchKey"),pregame,j.toString())
@@ -253,10 +257,26 @@ class NflRepository(
         }
         if(latest.isEmpty())return SimcastBatchAudit()
         var errorSum=0.0;var brierSum=0.0;var graded=0;var correct=0
+        var shadowErr=0.0;var shadowN=0;var shadowBrierSum=0.0;var shadowGraded=0;var shadowCorrect=0
         latest.forEach{ (id,j)->
             val g=completed.getValue(id)
             val observed=g.finalTotal ?: return@forEach
             errorSum+=kotlin.math.abs(j.optDouble("meanTotal",0.0)-observed)
+            val candidate=j.optJSONObject("scoringShadow")
+            if(candidate!=null && candidate.has("meanTotal") && !candidate.isNull("meanTotal")){
+                shadowErr+=kotlin.math.abs(candidate.optDouble("meanTotal")-observed)
+                shadowN++
+                if(!j.isNull("line") && !candidate.isNull("pOver")){
+                    val line=j.optDouble("line")
+                    if(observed.toDouble()!=line){
+                        val prob=candidate.optDouble("pOver").coerceIn(0.0,1.0)
+                        val y=if(observed>line)1.0 else 0.0
+                        shadowBrierSum+=(prob-y)*(prob-y)
+                        shadowGraded++
+                        if((prob>=.5)==(y==1.0))shadowCorrect++
+                    }
+                }
+            }
             if(!j.isNull("line")){
                 val line=j.optDouble("line")
                 if(observed.toDouble()!=line && !j.isNull("pOver")){
@@ -270,7 +290,10 @@ class NflRepository(
         }
         return SimcastBatchAudit(latest.size,errorSum/latest.size,
             if(graded>0)brierSum/graded else null,graded,
-            if(graded>0)correct.toDouble()/graded else null)
+            if(graded>0)correct.toDouble()/graded else null,
+            shadowN,if(shadowN>0)shadowErr/shadowN else null,
+            if(shadowGraded>0)shadowBrierSum/shadowGraded else null,shadowGraded,
+            if(shadowGraded>0)shadowCorrect.toDouble()/shadowGraded else null)
     }
 
     fun feeds(season:Int) = dataCenter.all(season)

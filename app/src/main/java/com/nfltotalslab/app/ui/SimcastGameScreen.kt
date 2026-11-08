@@ -240,10 +240,14 @@ fun SimcastGameScreen(
         item {
             Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
                 Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(9.dp)) {
-                    Text("SIMULATION CENTER · V1.6",color=scAmber,fontSize=14.sp,fontWeight=FontWeight.Black)
+                    Text("SIMULATION CENTER · V1.6.3 SCORING",color=scAmber,fontSize=14.sp,fontWeight=FontWeight.Black)
                     Text(if(audit.settled==0)"Auditor histórico: aún no hay lotes PRE-GAME con resultado final."
                          else "AUDITOR REAL · ${audit.settled} juegos · MAE ${"%.1f".format(audit.meanAbsoluteError)} puntos · Brier ${audit.brier?.let{ "%.3f".format(it) } ?: "—"} (${audit.linesGraded} líneas)",
                          color=scMuted,fontSize=10.sp)
+                    if(audit.shadowSettled>0) {
+                        Text("MARCADOR SHADOW · ${audit.shadowSettled} juegos · MAE ${audit.shadowMeanAbsoluteError?.let { "%.1f".format(it) } ?: "—"} · Brier ${audit.shadowBrier?.let { "%.3f".format(it) } ?: "—"}",color=scGreen,fontSize=10.sp)
+                        Text("Comparar ambos modelos sobre los mismos partidos PRE-GAME y con más juegos antes de promoverlos.",color=scAmber,fontSize=10.sp)
+                    }
                     Text("Monte Carlo experimental. Cada corrida calcula drives, puntos y estadísticas individuales; no modifica el Core.",color=scMuted,fontSize=11.sp)
                     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
                         listOf(100,500,1000).forEach { n ->
@@ -269,6 +273,27 @@ fun SimcastGameScreen(
         }
         if(batch!=null){
             val b=batch!!
+            b.scoringShadow?.let { sc ->
+                item {
+                    Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+                            Text("MARCADOR · CALIBRACIÓN ESTADÍSTICA (SHADOW)",color=scGreen,fontSize=13.sp,fontWeight=FontWeight.Black)
+                            Text("${b.away} ${"%.1f".format(sc.meanAway)} — ${b.home} ${"%.1f".format(sc.meanHome)}",color=scText,fontWeight=FontWeight.Bold,fontSize=18.sp)
+                            Text("Total ${"%.1f".format(sc.meanTotal)} · Mediana ${sc.medianTotal} · P10–P90 ${sc.p10Total}–${sc.p90Total}",color=scText,fontSize=12.sp)
+                            b.totalLine?.let { l ->
+                                Text("Línea ${"%.1f".format(l)} · OVER ${"%.1f".format(100*(sc.pOver?:0.0))}% · UNDER ${"%.1f".format(100*(sc.pUnder?:0.0))}% · PUSH ${"%.1f".format(100*(sc.pPush?:0.0))}%",color=scGreen,fontSize=11.sp)
+                            }
+                            Text("Drives: TD ${"%.0f".format(sc.away.pTouchdown*100)}%/${"%.0f".format(sc.home.pTouchdown*100)}% · FG ${"%.0f".format(sc.away.pFieldGoal*100)}%/${"%.0f".format(sc.home.pFieldGoal*100)}%",color=scMuted,fontSize=11.sp)
+                            Text("QB: ${sc.away.qb} (${"%.0f".format(sc.away.qbAttemptsEvidence)} intentos de evidencia) / ${sc.home.qb} (${"%.0f".format(sc.home.qbAttemptsEvidence)} intentos)",color=scMuted,fontSize=10.sp)
+                            Text("Fuentes: ${sc.away.rateSource} / ${sc.home.rateSource}",color=scMuted,fontSize=10.sp)
+                            if(sc.away.warning.isNotBlank())Text("${b.away}: ${sc.away.warning}",color=scAmber,fontSize=10.sp)
+                            if(sc.home.warning.isNotBlank())Text("${b.home}: ${sc.home.warning}",color=scAmber,fontSize=10.sp)
+                            HorizontalDivider(color=Color(0xff304659))
+                            Text("MODELO EXPERIMENTAL. Se compara contra el Simcast de jugadas; NO reemplaza su marcador animado ni el Core. Sin validación fuera de muestra no usar como probabilidad de apuesta.",color=scAmber,fontSize=11.sp)
+                        }
+                    }
+                }
+            }
             item {
                 Surface(color=scCard,shape=RoundedCornerShape(14.dp)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {

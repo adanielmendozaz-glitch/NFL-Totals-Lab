@@ -337,3 +337,7 @@ Esta versión es la base nativa. El siguiente paso es añadir:
 - Exact V0.9 engine preserved as `Core 0.9.0 Control` Shadow.
 - Adaptive Ensemble becomes family-aware V2; Matchup/OppAdj/Team Score/Roster stay isolated.
 - Data Vault V4 records architecture metadata.
+
+## V1.6.3 — Scoring Calibration SHADOW
+
+Agrega una proyección independiente de puntuación usando marcadores de semanas anteriores, TD/FG por drive verificados, EPA, QB y lesiones ofensivas, con comparativa MAE/Brier sobre batches pregame finalizados. Ver [SCORING_CALIBRATION_V1_6_3.md](SCORING_CALIBRATION_V1_6_3.md). El Simcast animado y el Core no cambian sus probabilidades. `tests/test-scoring-v163.sh` valida lógica básica, no precisión contra resultados futuros.

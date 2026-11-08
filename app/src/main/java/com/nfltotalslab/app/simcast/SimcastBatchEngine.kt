@@ -30,12 +30,16 @@ data class BatchReport(
     val totalHistogram:List<Pair<Int,Int>>,val mostCommonScores:List<ScoreFrequency>,
     val teamLines:List<BatchTeamLine>,val playerLines:List<BatchPlayerLine>,
     val replay:GameSim, val inputSignature:String="",
-    val overtimeRate:Double=0.0, val regulationTieRate:Double=0.0
+    val overtimeRate:Double=0.0, val regulationTieRate:Double=0.0,
+    val scoringShadow:ScoringShadowResult?=null
 )
 
 data class SimcastBatchAudit(
     val settled:Int=0,val meanAbsoluteError:Double=0.0,
-    val brier:Double?=null,val linesGraded:Int=0,val directionAccuracy:Double?=null
+    val brier:Double?=null,val linesGraded:Int=0,val directionAccuracy:Double?=null,
+    val shadowSettled:Int=0,val shadowMeanAbsoluteError:Double?=null,
+    val shadowBrier:Double?=null,val shadowLinesGraded:Int=0,
+    val shadowDirectionAccuracy:Double?=null
 )
 
 class SimcastBatchEngine(private val engine:PlayerUsageDriveEngine=PlayerUsageDriveEngine()){

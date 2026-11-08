@@ -7,13 +7,43 @@ import org.json.JSONObject
 object SimcastBatchArchive {
     fun toJson(b:BatchReport):JSONObject = JSONObject().apply {
         put("schema","NFL_SIMCAST_BATCH_V2")
-        put("version","1.6.1-REAL-WEEKLY-CALIBRATION")
+        put("version","1.6.3-DRIVE-SCORING-SHADOW")
         put("gameId",b.gameId);put("season",b.season);put("week",b.week)
         put("away",b.away);put("home",b.home);put("seed",b.baseSeed);put("n",b.n)
         put("batchKey","${b.gameId}|${b.builtAt}|${b.baseSeed}|${b.n}")
         put("inputSignature",b.inputSignature)
         put("createdAt",b.builtAt);put("pregame",b.pregame)
         put("line",b.totalLine ?: JSONObject.NULL)
+        b.scoringShadow?.let { sc ->
+            fun parameter(t:ScoringTeamParameters)=JSONObject().apply{
+                put("team",t.team);put("expectedPpg",t.expectedPpg)
+                put("drivesPerGame",t.drivesPerGame);put("tdPerDrive",t.pTouchdown)
+                put("fgPerDrive",t.pFieldGoal);put("qb",t.qb)
+                put("qbAttemptsEvidence",t.qbAttemptsEvidence)
+                put("qbMultiplier",t.qbMultiplier)
+                put("skillInjuryMultiplier",t.skillInjuryMultiplier)
+                put("offenseOutShare",t.offenseOutShare)
+                put("epaMultiplier",t.epaMultiplier);put("rateSource",t.rateSource)
+                put("lineupVerified",t.lineupVerified);put("warning",t.warning)
+            }
+            put("scoringShadow",JSONObject().apply {
+                put("method",sc.method);put("note",sc.warning)
+                put("n",sc.n);put("meanAway",sc.meanAway);put("meanHome",sc.meanHome)
+                put("meanTotal",sc.meanTotal);put("medianTotal",sc.medianTotal)
+                put("sdTotal",sc.sdTotal);put("p10Total",sc.p10Total);put("p90Total",sc.p90Total)
+                put("pOver",sc.pOver ?: JSONObject.NULL)
+                put("pUnder",sc.pUnder ?: JSONObject.NULL)
+                put("pPush",sc.pPush ?: JSONObject.NULL)
+                put("awayWinRate",sc.awayWinRate);put("homeWinRate",sc.homeWinRate)
+                put("tieRate",sc.tieRate)
+                put("awayInputs",parameter(sc.away));put("homeInputs",parameter(sc.home))
+                put("topScores",JSONArray().apply { sc.topScores.forEach{ f ->
+                    put(JSONObject().apply { put("away",f.away);put("home",f.home);put("n",f.count) })
+                }})
+                put("sourceCutoffWeek",b.calibration.cutoffWeek)
+                put("pregameSnapshot",b.pregame)
+            })
+        }
         put("meanTotal",b.meanTotal);put("medianTotal",b.medianTotal);put("sdTotal",b.sdTotal)
         put("p10",b.p10);put("p25",b.p25);put("p75",b.p75);put("p90",b.p90)
         put("meanAway",b.meanAway);put("meanHome",b.meanHome)
